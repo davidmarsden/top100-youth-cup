@@ -67,7 +67,6 @@ export default function AppPage() {
   useEffect(() => {
     if (!isSupabase) return;
     (async () => {
-      // Ensure season exists
       await fetch('/api/seasons', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -77,13 +76,10 @@ export default function AppPage() {
           timezone: settings.timezone,
         }),
       });
-
-      // Load entrants
       const res = await fetch(`/api/entrants?season=${encodeURIComponent(settings.season)}`);
       const json = await res.json();
       setEntrants(json.entrants || []);
 
-      // Load fixtures (if any already persisted)
       const fxRes = await fetch(`/api/fixtures?season=${encodeURIComponent(settings.season)}`);
       const fxJson = await fxRes.json();
       if (Array.isArray(fxJson.fixtures)) setFixtures(fxJson.fixtures);
@@ -146,7 +142,12 @@ export default function AppPage() {
   const clearEntrants = async () => {
     if (!confirm('Clear all entrants for this season?')) return;
     if (isSupabase) {
-      await fetch(`/api/entrants?season=${settings.season}`, { method: 'DELETE' });
+      // server-side proxy (adds ADMIN_KEY)
+      await fetch('/api/admin/entrants/clear', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ season: settings.season }),
+      });
       const res = await fetch(`/api/entrants?season=${settings.season}`);
       const json = await res.json();
       setEntrants(json.entrants || []);
@@ -167,7 +168,7 @@ export default function AppPage() {
     const fx = generateGroupFixtures(g, !!settings.doubleRoundRobin);
     setFixtures(fx);
 
-    // Persist fixtures in Supabase (admin-only)
+    // Persist fixtures in Supabase via server proxy (admin-only)
     if (isSupabase && admin) {
       const payload = fx.map((f: any) => ({
         id: f.id,
@@ -179,17 +180,12 @@ export default function AppPage() {
         status: 'pending',
       }));
 
-      await fetch('/api/fixtures', {
+      await fetch('/api/admin/fixtures/persist', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          // QUICK MODE: requires NEXT_PUBLIC_ADMIN_KEY to equal ADMIN_KEY on Netlify
-          'x-admin-key': (process.env.NEXT_PUBLIC_ADMIN_KEY as string) || '',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ season: settings.season, fixtures: payload }),
       });
 
-      // Refresh from DB
       const fresh = await fetch(`/api/fixtures?season=${settings.season}`).then((r) => r.json());
       if (fresh.fixtures) setFixtures(fresh.fixtures);
     }
@@ -464,11 +460,8 @@ export default function AppPage() {
       )}
 
       {tab === 'Groups' && renderGroups()}
-
       {tab === 'Fixtures' && renderFixtures()}
-
       {tab === 'Tables' && renderTables()}
-
       {tab === 'Knockout32' && renderKO()}
 
       {tab === 'Admin Notes' && (
