@@ -13,6 +13,10 @@ export default function AppPage(){
   const [entrants, setEntrants] = useState<Entrant[]>(()=>load('yc:entrants', sampleEntrants));
   const [groups, setGroups] = useState<GroupTeam[]>(()=>load('yc:groups', []));
   const [fixtures, setFixtures] = useState<Fixture[]>(()=>load('yc:fixtures', []));
+	 const [adminNotes, setAdminNotes] = useState<string>(()=>load('yc:adminNotes', ''));
+
+useEffect(()=>save('yc:adminNotes', adminNotes), [adminNotes]);
+
   const [tab, setTab] = useState('Entrants');
 
   useEffect(()=>save('yc:settings', settings), [settings]);
@@ -227,9 +231,20 @@ export default function AppPage(){
         </section>
       )}
 
-      {tab==='Admin Notes' && (
-        <section className="card"><p>Admin notes…</p></section>
-      )}
+
+
+{tab==='Admin Notes' && (
+  <section className="card">
+    <h3 className="font-bold text-lg mb-3">Admin Notes</h3>
+    <textarea
+      className="w-full min-h-[240px] px-3 py-2 rounded-xl bg-white/10 border border-white/20"
+      value={adminNotes}
+      onChange={e=>setAdminNotes(e.target.value)}
+      placeholder="Use this space for reminders, draw decisions, penalties, etc."
+    />
+    <p className="text-xs opacity-70 mt-2">Notes are stored {process.env.NEXT_PUBLIC_SUPABASE_URL ? 'in Supabase (once wired)' : 'locally in your browser'}.</p>
+  </section>
+)}
     </div>
   );
 }
