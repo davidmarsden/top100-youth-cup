@@ -1,0 +1,13 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --pitch-1: #0b3d0b;
+  --pitch-2: #0f5f0f;
+}
+body { @apply text-white; background: linear-gradient(135deg, var(--pitch-1), var(--pitch-2), var(--pitch-1)); }
+.card { @apply bg-white/10 border border-white/20 rounded-2xl p-4; }
+.btn { @apply px-3 py-2 rounded-xl border border-white/20 bg-white/10 hover:bg-white/20; }
+.btn-primary { @apply px-4 py-2 font-bold rounded-2xl bg-yellow-300 text-black hover:bg-yellow-200; }
+.table { @apply w-full text-sm; }
