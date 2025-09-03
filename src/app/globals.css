@@ -2,14 +2,18 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {
-  --pitch-1: #0b3d0b;
-  --pitch-2: #0f5f0f;
+/* Default (green) is applied when .theme-green on <html> */
+html.theme-green body {
+  background: linear-gradient(135deg, #0b3d0b, #0f5f0f, #0b3d0b);
+  color: white;
 }
-
-body {
-  @apply text-white;
-  background: linear-gradient(135deg, var(--pitch-1), var(--pitch-2), var(--pitch-1));
+html.theme-neutral body {
+  background: radial-gradient(circle at 30% 20%, #2a2a2a, #161616);
+  color: white;
+}
+html.theme-dark body {
+  background: #000;
+  color: #eee;
 }
 
 .card { @apply bg-white/10 border border-white/20 rounded-2xl p-4; }
@@ -17,15 +21,6 @@ body {
 .btn-primary { @apply px-4 py-2 font-bold rounded-2xl bg-yellow-300 text-black hover:bg-yellow-200; }
 .table { @apply w-full text-sm; }
 
-/* Prize-draw ticker animation */
-@keyframes tickerSlide {
-  0% { transform: translateY(0); opacity: .7; }
-  50% { transform: translateY(-4px); opacity: 1; }
-  100% { transform: translateY(0); opacity: .7; }
-}
+/* ticker */
+@keyframes tickerSlide { 0%{transform:translateY(0);opacity:.7} 50%{transform:translateY(-4px);opacity:1} 100%{transform:translateY(0);opacity:.7} }
 .animate-ticker { animation: tickerSlide .6s ease-in-out infinite; }
-
-/* themes */
-.theme-green body {}
-.theme-neutral body { background: radial-gradient(circle at 30% 20%, #222, #111); }
-.theme-dark body { background: #000; color: #fff; }
