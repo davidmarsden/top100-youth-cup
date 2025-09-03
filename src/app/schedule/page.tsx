@@ -1,43 +1,36 @@
 'use client';
-import React, { useMemo, useState, useEffect } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import SectionCard from '@/components/SectionCard';
 import { Fixture } from '@/lib/types';
 import { load } from '@/lib/utils';
 import { saturdaysBetween, allocateRoundDates, LegSpec } from '@/lib/schedule';
 
-/** Helper: generate a human label for a fixture’s round */
+/** Derive a human-readable label per fixture to match plan labels */
 function labelOf(f: Fixture): string {
-  // Groups: derive from round number
   if (f.stage === 'groups') return `Group R${f.round}`;
-  // Knockouts: prefer koLabel if you set it when creating KO fixtures
-  if (f.koLabel) return f.koLabel;
-  // Fallback (you can refine this if you store round_label later)
-  return 'KO';
+  // For KO/Shield, set f.koLabel when creating fixtures (e.g., 'Cup R32', 'Shield R1', 'Cup QF (Leg 1)')
+  return f.koLabel || 'KO';
 }
 
 export default function SchedulePage() {
-  /** Load fixtures (localStorage for now; will come from Supabase later) */
-  const [fixtures, setFixtures] = useState<Fixture[]>(() => load<Fixture[]>('yc:fixtures', []));
+  // Load fixtures (from localStorage for MVP; swap to Supabase fetch later)
+  const [fixtures, setFixtures] = useState<Fixture[]>(() => load('yc:fixtures', []));
 
-  useEffect(() => {
-    // If you later fetch from Supabase, do it here and setFixtures(...)
-  }, []);
-
-  /** Available Saturdays in window */
+  // Available Saturdays in window (Europe/London season dates)
   const dates = useMemo(
     () => saturdaysBetween('2025-09-20', '2026-01-10'),
     []
   );
 
-  /** ▶️ Your first block goes here: compute groupRounds from fixtures */
+  // Compute how many group rounds exist from fixtures
   const groupRounds = useMemo(() => {
     const groupFix = fixtures.filter(f => f.stage === 'groups');
     return groupFix.length ? Math.max(...groupFix.map(f => f.round)) : 0;
   }, [fixtures]);
 
-  /** ▶️ Your second block: build the plan dynamically using groupRounds */
+  // Build the round plan dynamically
   const plan: LegSpec[] = useMemo(() => {
-    const p: { label: string; legs: 1 | 2 }[] = [];
+    const p: LegSpec[] = [];
     for (let r = 1; r <= groupRounds; r++) p.push({ label: `Group R${r}`, legs: 1 });
     p.push({ label: 'Cup R32', legs: 1 });
     p.push({ label: 'Shield R1', legs: 1 });
@@ -48,34 +41,59 @@ export default function SchedulePage() {
     return p;
   }, [groupRounds]);
 
-  /** Allocate plan → dates */
+  // Allocate dates across the plan
   const allocations = useMemo(() => allocateRoundDates(dates, plan), [dates, plan]);
 
-  /** ▶️ Your third block: apply allocations to real fixtures */
-  async function applyToFixtures(roundLabel: string) {
-    // If two legs, allocations[roundLabel] will have [leg1ISO, leg2ISO]; this example applies leg1.
-    const dateISO = allocations[roundLabel]?.[0]; // or handle [0]/[1] per leg in your UI
-    if (!dateISO) return alert('No date allocated for this round.');
+  /** Apply allocated date(s) to all fixtures in a round
+   *  legIdx: 0 for single/first leg, 1 for second leg
+   */
+  async function applyToFixtures(roundLabel: string, legIdx: 0 | 1 = 0) {
+    const slot = allocations[roundLabel];
+    if (!slot || !slot[legIdx]) return alert('No date allocated for this round/leg.');
+    const selectedISO = slot[legIdx];
 
-    // Match fixtures by derived label (Groups) or koLabel (KO/Shield)
-    const target = fixtures.filter(f => labelOf(f) === roundLabel);
+    // Select fixtures that belong to this round label.
+    // For two-leg KOs, you may encode leg info in koLabel (e.g., 'Cup QF (Leg 1)').
+    const target = fixtures.filter(f => {
+      const lbl = labelOf(f);
+      if (slot.length === 2) {
+        // try to match leg explicitly if your koLabel includes it
+        if (f.koLabel?.includes('Leg 1') && legIdx === 0) return f.koLabel!.startsWith(roundLabel);
+        if (f.koLabel?.includes('Leg 2') && legIdx === 1) return f.koLabel!.startsWith(roundLabel);
+      }
+      return lbl === roundLabel; // groups & single-leg rounds
+    });
 
-    // Local-only update for now (persist to Supabase via API when wired)
+    if (target.length === 0) return alert(`No fixtures found for ${roundLabel}${slot.length === 2 ? ` (Leg ${legIdx+1})` : ''}.`);
+
+    // Optimistic local update (so you see it immediately)
     const updated = fixtures.map(f =>
-      labelOf(f) === roundLabel ? { ...f, scheduled_at: dateISO as any } : f
+      target.some(t => t.id === f.id) ? { ...f, scheduled_at: selectedISO as any } : f
     );
     setFixtures(updated);
 
-    // TODO (when Supabase is connected): POST to /api/fixtures/[id]/schedule for each target fixture
-    // for (const fx of target) {
-    //   await fetch(`/api/fixtures/${fx.id}/schedule`, {
-    //     method: 'POST',
-    //     headers: { 'Content-Type': 'application/json' },
-    //     body: JSON.stringify({ scheduled_at: dateISO })
-    //   });
-    // }
+    // Persist via API + backup to Sheets
+    for (const fixture of target) {
+      try {
+        await fetch(`/api/fixtures/${fixture.id}/schedule`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ scheduled_at: selectedISO }),
+        });
+        await fetch('/api/backup', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            sheet: 'fixtures',
+            rows: [[fixture.id, selectedISO, roundLabel]],
+          }),
+        });
+      } catch (e) {
+        console.error('Schedule/backup failed for fixture', fixture.id, e);
+      }
+    }
 
-    alert(`Applied ${dateISO} to ${target.length} fixtures in ${roundLabel}.`);
+    alert(`Applied ${selectedISO} to ${target.length} fixtures in ${roundLabel}${slot.length === 2 ? ` (Leg ${legIdx+1})` : ''}.`);
   }
 
   return (
@@ -89,16 +107,23 @@ export default function SchedulePage() {
       <SectionCard title="Round → Allocated Date(s)">
         <div className="space-y-3">
           {Object.entries(allocations).map(([label, dts]) => (
-            <div key={label} className="bg-white/10 rounded-xl p-3">
+            <div key={label} className="bg-white/10 rounded-xl p-3 space-y-2">
               <div className="flex items-center justify-between">
                 <div className="font-semibold">{label}</div>
-                <div className="text-sm opacity-90">{dts.join('  •  ')}</div>
+                <div className="text-sm opacity-90">
+                  {dts.map((d, i) => <span key={i} className="ml-2">{i ? '• ' : ''}{d}</span>)}
+                </div>
               </div>
-              <div className="mt-2">
-                {/* ▶️ Your fourth block: the Apply buttons */}
-                <button className="btn" onClick={() => applyToFixtures(label)}>
-                  Apply dates to {label}
+              <div className="flex gap-2">
+                {/* Buttons become "Leg 1 / Leg 2" if two dates are allocated */}
+                <button className="btn" onClick={() => applyToFixtures(label, 0)}>
+                  Apply {dts.length === 2 ? 'Leg 1' : 'Date'}
                 </button>
+                {dts.length === 2 && (
+                  <button className="btn" onClick={() => applyToFixtures(label, 1)}>
+                    Apply Leg 2
+                  </button>
+                )}
               </div>
             </div>
           ))}
