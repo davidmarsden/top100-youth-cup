@@ -66,8 +66,7 @@ export default function RegisterPage(){
   </div>
 </SectionCard>
 
-        </div>
-      </SectionCard>
+        
     </div>
   );
 }
