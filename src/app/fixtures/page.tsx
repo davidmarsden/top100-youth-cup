@@ -6,14 +6,14 @@ import SectionCard from '@/components/SectionCard';
 import { useAdmin } from '@/components/AdminGate';
 import { Fixture, Entrant } from '@/lib/types';
 
-// Prevent static prerender/ISR and caching for this page
+// Avoid static prerender/ISR and caching
 export const dynamic = 'force-dynamic';
 export const revalidate = false;
 export const fetchCache = 'force-no-store';
 
 type Fx = Fixture;
 
-const fmt = (iso?: string) =>
+const fmt = (iso?: string | null) =>
   iso ? new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) : '—';
 
 export default function FixturesPage() {
@@ -40,6 +40,11 @@ export default function FixturesPage() {
         if (!alive) return;
         setEntrants(eJson?.items ?? []);
         setFixtures(fJson?.items ?? []);
+      } catch {
+        if (alive) {
+          setEntrants([]);
+          setFixtures([]);
+        }
       } finally {
         if (alive) setLoading(false);
       }
@@ -52,17 +57,11 @@ export default function FixturesPage() {
   const byRound = useMemo(() => {
     const map: Record<string, Fx[]> = {};
     for (const fx of fixtures) {
-      const st = fx.stage ?? ''; // <- guard stage possibly undefined
+      const st = fx.stage ?? ''; // stage may be undefined/null
 
-      // Stage label
       const baseStage =
-        st === 'groups'
-          ? 'Groups'
-          : st
-          ? st.replace(/_/g, ' ')
-          : 'Unknown';
+        st === 'groups' ? 'Groups' : st ? st.replace(/_/g, ' ') : 'Unknown';
 
-      // Round label
       const baseRound =
         st === 'groups'
           ? (fx.round ? `R${fx.round}` : '')
@@ -83,8 +82,15 @@ export default function FixturesPage() {
     return map;
   }, [fixtures]);
 
-  const managerOf = (id?: string) => entrants.find(e => e.id === id)?.manager ?? 'TBC';
-  const clubOf    = (id?: string) => entrants.find(e => e.id === id)?.club ?? 'TBC';
+  // Accept string | null | undefined to satisfy TS where Supabase may return null
+  const managerOf = (id: string | null | undefined) => {
+    if (!id) return 'TBC';
+    return entrants.find((e) => e.id === id)?.manager ?? 'TBC';
+  };
+  const clubOf = (id: string | null | undefined) => {
+    if (!id) return 'TBC';
+    return entrants.find((e) => e.id === id)?.club ?? 'TBC';
+  };
 
   return (
     <div className="grid lg:grid-cols-3 gap-4">
@@ -98,7 +104,9 @@ export default function FixturesPage() {
             className="w-full px-3 py-2 rounded-xl bg-white/10 border border-white/20"
           />
           <p className="text-xs opacity-70">Leave blank to use the server’s current season.</p>
-          <p className="text-xs opacity-70">Mode: <span className="font-semibold">{admin ? 'Admin' : 'Viewer'}</span></p>
+          <p className="text-xs opacity-70">
+            Mode: <span className="font-semibold">{admin ? 'Admin' : 'Viewer'}</span>
+          </p>
         </div>
       </SectionCard>
 
@@ -124,7 +132,7 @@ export default function FixturesPage() {
                   <tbody>
                     {rows.map((fx) => (
                       <tr key={fx.id} className="border-t border-white/10">
-                        <td className="py-1 pr-2">{fmt(fx.scheduled_at)}</td>
+                        <td className="py-1 pr-2">{fmt(fx.scheduled_at ?? null)}</td>
                         <td className="py-1 pr-2">
                           <div className="text-sm font-medium">{clubOf(fx.home_id)}</div>
                           <div className="text-xs opacity-70">{managerOf(fx.home_id)}</div>
@@ -150,6 +158,7 @@ export default function FixturesPage() {
       <SectionCard title="Notes">
         <ul className="list-disc pl-5 text-sm space-y-2 opacity-80">
           <li>This page is <strong>force-dynamic</strong> and <strong>no-store</strong> to avoid prerendering.</li>
+          <li>IDs from Supabase can be <code>null</code>; helpers now guard for that.</li>
         </ul>
       </SectionCard>
     </div>
