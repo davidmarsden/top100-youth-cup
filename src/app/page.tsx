@@ -29,7 +29,7 @@ export default function AppPage(){
     if (entrants.length<4){ alert('Need at least 4 entrants to draw groups.'); return; }
     const g = assignGroups(entrants, settings);
     setGroups(g);
-    setFixtures(generateGroupFixtures(g));
+    setFixtures(generateGroupFixtures(g, !!settings.doubleRoundRobin));
     setTab('Groups');
   };
 
