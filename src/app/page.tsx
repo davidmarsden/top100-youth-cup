@@ -223,7 +223,7 @@ export default function AppPage() {
     const byGroup = groups.reduce((acc, gt) => {
       (acc[gt.group] ||= []).push(gt);
       return acc;
-    }, {} as Record<string, GroupTeam[]>);
+    }, {} as { [key: string]: GroupTeam[] });
     return (
       <div className="grid md:grid-cols-2 gap-4">
         {Object.keys(byGroup)
@@ -251,7 +251,7 @@ export default function AppPage() {
     const byRound = fixtures.reduce((acc, fx) => {
       (acc[(fx as any).round_label || `Group R${(fx as any).round}`] ||= []).push(fx);
       return acc;
-    }, {} as Record<string, Fixture[]>);
+    }, {} as { [key: string]: Fixture[] });
     return (
       <div className="space-y-4">
         {Object.keys(byRound).map((label) => (
@@ -282,7 +282,7 @@ export default function AppPage() {
     const byGroup = groupedStandings.reduce((acc, s) => {
       (acc[s.group] ||= []).push(s);
       return acc;
-    }, {} as Record<string, Standing[]>);
+    }, {} as { [key: string]: Standing[] });
     return (
       <div className="grid md:grid-cols-2 gap-4">
         {Object.keys(byGroup)
