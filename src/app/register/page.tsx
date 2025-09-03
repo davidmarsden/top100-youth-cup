@@ -56,6 +56,16 @@ export default function RegisterPage(){
               ))}
             </tbody>
           </table>
+  <div className="mt-3">
+    <button className="btn border-red-400 hover:bg-red-400/20" onClick={()=>{
+      if (!confirm('Clear all entrants?')) return;
+      setEntrants([]);
+      if (typeof window !== 'undefined') window.localStorage.removeItem('yc:entrants');
+      alert('Entrants cleared.');
+    }}>Clear entrants</button>
+  </div>
+</SectionCard>
+
         </div>
       </SectionCard>
     </div>
