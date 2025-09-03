@@ -87,7 +87,13 @@ export default function AppPage() {
     () => computeStandings(fixtures, settings, entrants, groups),
     [fixtures, settings, entrants, groups]
   );
-  const groupedStandings = useMemo(() => rankWithinGroups(standings), [standings]);
+
+  // NOTE: rankWithinGroups might return either Standing[] or Record<string, Standing[]>
+  const groupedStandings = useMemo(
+    () => rankWithinGroups(standings) as unknown,
+    [standings]
+  );
+
   const ko = useMemo(() => computeKO32(standings, groups, settings), [standings, groups, settings]);
 
   // ---------- ACTIONS (Admin) ----------
@@ -285,13 +291,34 @@ export default function AppPage() {
   };
 
   const renderTables = () => {
-    if (!groupedStandings.length) return <p>No tables yet.</p>;
+    // Handle both shapes: Standing[] or Record<string, Standing[]>
+    const gs: unknown = groupedStandings;
 
+    // Quick empty check
+    const isEmptyArray = Array.isArray(gs) && gs.length === 0;
+    const isEmptyRecord =
+      !Array.isArray(gs) &&
+      gs != null &&
+      typeof gs === 'object' &&
+      Object.keys(gs as Record<string, unknown>).length === 0;
+
+    if (isEmptyArray || isEmptyRecord) return <p>No tables yet.</p>;
+
+    // Build byGroup map safely
     const byGroup: { [key: string]: Standing[] } = {};
-    for (const s of groupedStandings as Standing[]) {
-      if (!byGroup[s.group]) byGroup[s.group] = [];
-      byGroup[s.group].push(s);
+    if (Array.isArray(gs)) {
+      for (const s of gs as Standing[]) {
+        if (!byGroup[s.group]) byGroup[s.group] = [];
+        byGroup[s.group].push(s);
+      }
+    } else if (gs != null && typeof gs === 'object') {
+      const rec = gs as Record<string, Standing[]>;
+      for (const [k, arr] of Object.entries(rec)) {
+        byGroup[k] = arr;
+      }
     }
+
+    if (!Object.keys(byGroup).length) return <p>No tables yet.</p>;
 
     return (
       <div className="grid md:grid-cols-2 gap-4">
