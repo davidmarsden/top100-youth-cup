@@ -64,7 +64,6 @@ export default function AppPage() {
   const [tab, setTab] = useState<string>('Entrants');
 
   // ---------- SUPABASE INTEGRATION ----------
-  // Ensure season exists, then fetch entrants for that season
   useEffect(() => {
     if (!isSupabase) return;
     (async () => {
@@ -77,13 +76,10 @@ export default function AppPage() {
           timezone: settings.timezone,
         }),
       });
-      const res = await fetch(
-        `/api/entrants?season=${encodeURIComponent(settings.season)}`
-      );
+      const res = await fetch(`/api/entrants?season=${encodeURIComponent(settings.season)}`);
       const json = await res.json();
       setEntrants(json.entrants || []);
 
-      // (Optional) Load existing fixtures for this season into local state
       const fxRes = await fetch(`/api/fixtures?season=${encodeURIComponent(settings.season)}`);
       const fxJson = await fxRes.json();
       if (Array.isArray(fxJson.fixtures)) setFixtures(fxJson.fixtures);
@@ -95,16 +91,8 @@ export default function AppPage() {
     () => computeStandings(fixtures, settings, entrants, groups),
     [fixtures, settings, entrants, groups]
   );
-
-  const groupedStandings = useMemo(
-    () => rankWithinGroups(standings),
-    [standings]
-  );
-
-  const ko = useMemo(
-    () => computeKO32(standings, groups, settings),
-    [standings, groups, settings]
-  );
+  const groupedStandings = useMemo(() => rankWithinGroups(standings), [standings]);
+  const ko = useMemo(() => computeKO32(standings, groups, settings), [standings, groups, settings]);
 
   // ---------- ACTIONS ----------
   const addEntrant = async () => {
@@ -175,21 +163,19 @@ export default function AppPage() {
     const fx = generateGroupFixtures(g, !!settings.doubleRoundRobin);
     setFixtures(fx);
 
-    // Persist fixtures in Supabase (admin-only)
     if (isSupabase && admin) {
       await fetch('/api/fixtures', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          // QUICK MODE: requires NEXT_PUBLIC_ADMIN_KEY to be set to the same value as ADMIN_KEY on Netlify
-          'x-admin-key': (process.env.NEXT_PUBLIC_ADMIN_KEY as string) || '',
+          'x-admin-key': process.env.NEXT_PUBLIC_ADMIN_KEY || '',
         },
         body: JSON.stringify({
           season: settings.season,
-          fixtures: fx.map(f => ({
+          fixtures: fx.map((f) => ({
             id: f.id,
             stage: 'groups',
-            round_label: `Group R${f.round}`,
+            round_label: `Group R${(f as any).round}`,
             leg: 'single',
             homeId: (f as any).homeId ?? (f as any).home_entrant_id ?? null,
             awayId: (f as any).awayId ?? (f as any).away_entrant_id ?? null,
@@ -197,8 +183,7 @@ export default function AppPage() {
           })),
         }),
       });
-      // Refresh from DB (optional)
-      const fresh = await fetch(`/api/fixtures?season=${settings.season}`).then(r => r.json());
+      const fresh = await fetch(`/api/fixtures?season=${settings.season}`).then((r) => r.json());
       if (fresh.fixtures) setFixtures(fresh.fixtures);
     }
 
@@ -225,15 +210,13 @@ export default function AppPage() {
       const fxRes = await fetch(`/api/fixtures?season=${next}`);
       const fxJson = await fxRes.json();
       setFixtures(fxJson.fixtures || []);
-      setGroups([]); // groups are season-specific — reset until (re)drawn
+      setGroups([]);
     } else {
       setEntrants([]);
       setGroups([]);
       setFixtures([]);
     }
-    alert(
-      `Switched to season ${next}. Previous seasons remain in the database (or your local storage) as archive.`
-    );
+    alert(`Switched to season ${next}. Previous seasons remain archived.`);
   };
 
   // ---------- RENDER HELPERS ----------
@@ -297,7 +280,7 @@ export default function AppPage() {
   };
 
   const renderTables = () => {
-    if (!groupedStandings.length) return <p>No tables yet. Play some matches or confirm results.</p>;
+    if (!groupedStandings.length) return <p>No tables yet.</p>;
     const byGroup = groupedStandings.reduce<Record<string, Standing[]>>((acc, s) => {
       (acc[s.group] ||= []).push(s);
       return acc;
@@ -348,9 +331,9 @@ export default function AppPage() {
   };
 
   const renderKO = () => {
-    if (!ko || !ko.pairs || !ko.pairs.length) return <p>No KO bracket yet. Complete groups first.</p>;
+    if (!ko || !ko.pairs || !ko.pairs.length) return <p>No KO bracket yet.</p>;
     return (
-      <SectionCard title="Youth Cup — Round of 32 (seeded by group performance)">
+      <SectionCard title="Youth Cup — Round of 32 (seeded)">
         <ul className="space-y-1">
           {ko.pairs.map((p, i) => {
             const a = entrants.find((e) => e.id === p[0]);
@@ -386,15 +369,7 @@ export default function AppPage() {
       </div>
 
       <Tabs
-        tabs={[
-          'Entrants',
-          'Settings',
-          'Groups',
-          'Fixtures',
-          'Tables',
-          'Knockout32',
-          'Admin Notes',
-        ]}
+        tabs={['Entrants', 'Settings', 'Groups', 'Fixtures', 'Tables', 'Knockout32', 'Admin Notes']}
         value={tab}
         onChange={setTab}
       />
@@ -404,7 +379,7 @@ export default function AppPage() {
           <SectionCard title={`Entrants (${entrants.length}) — Season ${settings.season}`}>
             <EntrantsTable entrants={entrants} onClear={admin ? clearEntrants : undefined} />
             <p className="text-xs opacity-70 mt-2">
-              {isSupabase ? 'Shared via Supabase (all viewers see the same).' : 'Local to your browser only.'}
+              {isSupabase ? 'Shared via Supabase.' : 'Local only.'}
             </p>
           </SectionCard>
 
@@ -412,11 +387,15 @@ export default function AppPage() {
             <div className="space-y-2">
               {admin ? (
                 <>
-                  <button className="btn" onClick={doDraw}>Draw groups now</button>
-                  <button className="btn" onClick={switchSeason}>Switch Season</button>
+                  <button className="btn" onClick={doDraw}>
+                    Draw groups now
+                  </button>
+                  <button className="btn" onClick={switchSeason}>
+                    Switch Season
+                  </button>
                 </>
               ) : (
-                <p className="text-sm opacity-80">Viewing mode. Ask an admin to draw or switch season.</p>
+                <p className="text-sm opacity-80">Viewing mode only.</p>
               )}
             </div>
           </SectionCard>
@@ -437,7 +416,7 @@ export default function AppPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm opacity-80">Age cutoff (YYYY-MM-DD)</label>
+                  <label className="block text-sm opacity-80">Age cutoff</label>
                   <input
                     className="w-full px-3 py-2 rounded-xl bg-white/10 border border-white/20"
                     value={settings.ageCutoffISO}
@@ -462,25 +441,24 @@ export default function AppPage() {
                       setSettings({ ...settings, doubleRoundRobin: e.target.checked })
                     }
                   />
-                  <label htmlFor="drr">Double round robin (home & away)</label>
+                  <label htmlFor="drr">Double round robin</label>
                 </div>
               </div>
               <div className="mt-3">
-                <button className="btn" onClick={switchSeason}>Switch Season</button>
+                <button className="btn" onClick={switchSeason}>
+                  Switch Season
+                </button>
               </div>
             </>
           ) : (
-            <p className="text-sm opacity-80">Viewing mode. Settings are admin-only.</p>
+            <p className="text-sm opacity-80">Viewing mode only.</p>
           )}
         </SectionCard>
       )}
 
       {tab === 'Groups' && renderGroups()}
-
       {tab === 'Fixtures' && renderFixtures()}
-
       {tab === 'Tables' && renderTables()}
-
       {tab === 'Knockout32' && renderKO()}
 
       {tab === 'Admin Notes' && (
@@ -490,18 +468,4 @@ export default function AppPage() {
               <textarea
                 className="w-full min-h-[240px] px-3 py-2 rounded-xl bg-white/10 border border-white/20"
                 value={adminNotes}
-                onChange={(e) => setAdminNotes(e.target.value)}
-                placeholder="Use this space for reminders, draw decisions, penalties, disputes, etc."
-              />
-              <p className="text-xs opacity-70 mt-2">
-                Stored {isSupabase ? 'in Supabase' : 'locally in your browser'}.
-              </p>
-            </>
-          ) : (
-            <p className="text-sm opacity-80">Admin notes are not visible in viewer mode.</p>
-          )}
-        </SectionCard>
-      )}
-    </div>
-  );
-}
+                onChange={(e) => set
