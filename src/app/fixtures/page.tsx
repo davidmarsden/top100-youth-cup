@@ -6,7 +6,7 @@ import SectionCard from '@/components/SectionCard';
 import { useAdmin } from '@/components/AdminGate';
 import { Fixture, Entrant } from '@/lib/types';
 
-// Never prerender/cache this page
+// Disable prerender/ISR for this page
 export const dynamic = 'force-dynamic';
 export const revalidate = false;
 export const fetchCache = 'force-no-store';
@@ -52,11 +52,11 @@ export default function FixturesPage() {
   const byRound = useMemo(() => {
     const map: Record<string, Fx[]> = {};
     for (const fx of fixtures) {
-      const key =
-        fx.stage === 'groups'
-          // ✅ use existing fields; no group_label on Fixture
-          ? `Group ${fx.group ?? ''} — R${fx.round ?? ''}`.trim()
-          : `${fx.stage_label ?? fx.stage} ${fx.round_label ?? ''}`.trim();
+      // Build a human label without using a non-existent `group` field
+      const baseStage = fx.stage_label ?? fx.stage; // e.g. "Groups" or "Quarter-final"
+      const baseRound =
+        fx.round_label ?? (fx.round ? `R${fx.round}` : ''); // fallback "R{n}" for groups
+      const key = [baseStage, baseRound].filter(Boolean).join(' ').trim();
 
       if (!map[key]) map[key] = [];
       map[key].push(fx);
@@ -85,7 +85,7 @@ export default function FixturesPage() {
             placeholder="e.g., S26"
             className="w-full px-3 py-2 rounded-xl bg-white/10 border border-white/20"
           />
-          <p className="text-xs opacity-70">Leave blank to show current season (server default).</p>
+          <p className="text-xs opacity-70">Leave blank to use the server’s current season.</p>
           <p className="text-xs opacity-70">Mode: <span className="font-semibold">{admin ? 'Admin' : 'Viewer'}</span></p>
         </div>
       </SectionCard>
