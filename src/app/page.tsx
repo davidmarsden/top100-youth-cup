@@ -67,6 +67,7 @@ export default function AppPage() {
   useEffect(() => {
     if (!isSupabase) return;
     (async () => {
+      // Ensure season exists
       await fetch('/api/seasons', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -76,10 +77,13 @@ export default function AppPage() {
           timezone: settings.timezone,
         }),
       });
+
+      // Load entrants
       const res = await fetch(`/api/entrants?season=${encodeURIComponent(settings.season)}`);
       const json = await res.json();
       setEntrants(json.entrants || []);
 
+      // Load fixtures (if any already persisted)
       const fxRes = await fetch(`/api/fixtures?season=${encodeURIComponent(settings.season)}`);
       const fxJson = await fxRes.json();
       if (Array.isArray(fxJson.fixtures)) setFixtures(fxJson.fixtures);
@@ -163,26 +167,29 @@ export default function AppPage() {
     const fx = generateGroupFixtures(g, !!settings.doubleRoundRobin);
     setFixtures(fx);
 
+    // Persist fixtures in Supabase (admin-only)
     if (isSupabase && admin) {
+      const payload = fx.map((f: any) => ({
+        id: f.id,
+        stage: 'groups',
+        round_label: `Group R${f.round}`,
+        leg: 'single',
+        homeId: f.homeId ?? f.home_entrant_id ?? null,
+        awayId: f.awayId ?? f.away_entrant_id ?? null,
+        status: 'pending',
+      }));
+
       await fetch('/api/fixtures', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'x-admin-key': process.env.NEXT_PUBLIC_ADMIN_KEY || '',
+          // QUICK MODE: requires NEXT_PUBLIC_ADMIN_KEY to equal ADMIN_KEY on Netlify
+          'x-admin-key': (process.env.NEXT_PUBLIC_ADMIN_KEY as string) || '',
         },
-        body: JSON.stringify({
-          season: settings.season,
-          fixtures: fx.map((f) => ({
-            id: f.id,
-            stage: 'groups',
-            round_label: `Group R${(f as any).round}`,
-            leg: 'single',
-            homeId: (f as any).homeId ?? (f as any).home_entrant_id ?? null,
-            awayId: (f as any).awayId ?? (f as any).away_entrant_id ?? null,
-            status: 'pending',
-          })),
-        }),
+        body: JSON.stringify({ season: settings.season, fixtures: payload }),
       });
+
+      // Refresh from DB
       const fresh = await fetch(`/api/fixtures?season=${settings.season}`).then((r) => r.json());
       if (fresh.fixtures) setFixtures(fresh.fixtures);
     }
@@ -416,7 +423,7 @@ export default function AppPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm opacity-80">Age cutoff</label>
+                  <label className="block text-sm opacity-80">Age cutoff (YYYY-MM-DD)</label>
                   <input
                     className="w-full px-3 py-2 rounded-xl bg-white/10 border border-white/20"
                     value={settings.ageCutoffISO}
@@ -441,7 +448,7 @@ export default function AppPage() {
                       setSettings({ ...settings, doubleRoundRobin: e.target.checked })
                     }
                   />
-                  <label htmlFor="drr">Double round robin</label>
+                  <label htmlFor="drr">Double round robin (home & away)</label>
                 </div>
               </div>
               <div className="mt-3">
@@ -451,14 +458,17 @@ export default function AppPage() {
               </div>
             </>
           ) : (
-            <p className="text-sm opacity-80">Viewing mode only.</p>
+            <p className="text-sm opacity-80">Viewing mode only. Settings are admin-only.</p>
           )}
         </SectionCard>
       )}
 
       {tab === 'Groups' && renderGroups()}
+
       {tab === 'Fixtures' && renderFixtures()}
+
       {tab === 'Tables' && renderTables()}
+
       {tab === 'Knockout32' && renderKO()}
 
       {tab === 'Admin Notes' && (
@@ -468,4 +478,18 @@ export default function AppPage() {
               <textarea
                 className="w-full min-h-[240px] px-3 py-2 rounded-xl bg-white/10 border border-white/20"
                 value={adminNotes}
-                onChange={(e) => set
+                onChange={(e) => setAdminNotes(e.target.value)}
+                placeholder="Use this space for reminders, draw decisions, penalties, disputes, etc."
+              />
+              <p className="text-xs opacity-70 mt-2">
+                Stored {isSupabase ? 'in Supabase (wire later)' : 'locally in your browser'}.
+              </p>
+            </>
+          ) : (
+            <p className="text-sm opacity-80">Admin notes are not visible in viewer mode.</p>
+          )}
+        </SectionCard>
+      )}
+    </div>
+  );
+}
