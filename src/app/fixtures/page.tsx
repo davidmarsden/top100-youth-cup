@@ -7,10 +7,10 @@ import { useSeason } from '@/components/SeasonProvider';
 import { isSupabase } from '@/lib/mode';
 import { useSearchParams } from 'next/navigation';
 
-export const dynamic = 'force-dynamic';   // ⬅ prevent static prerender
-export const revalidate = 0;              // ⬅ no cache for this page
+export const dynamic = 'force-dynamic';  // prevent SSG for this page
+export const revalidate = false;         // must be a number or false (NOT an object)
+export const fetchCache = 'force-no-store';
 
-// Match your lib/types minimal shapes
 type Fx = {
   id: string;
   season_id?: string;
@@ -41,10 +41,9 @@ export default function FixturesPublic() {
   const SEASON_DEFAULT = useSeason();
   const search = useSearchParams();
 
-  // optional URL override (?season=S27)
   const seasonFromUrl = search.get('season') || undefined;
   const initialSeason = seasonFromUrl ?? SEASON_DEFAULT;
-  const [season] = useState<string>(() => initialSeason); // never undefined
+  const [season] = useState<string>(() => initialSeason);
 
   const [entrants, setEntrants] = useState<Entrant[]>([]);
   const [fixtures, setFixtures] = useState<Fx[]>([]);
@@ -73,11 +72,9 @@ export default function FixturesPublic() {
           setEntrants(Array.isArray(eJson.entrants) ? eJson.entrants : []);
           setFixtures(Array.isArray(fJson.fixtures) ? fJson.fixtures : []);
         } else {
-          // Local fallback (client only)
           const eLocal = typeof window !== 'undefined' ? window.localStorage.getItem('yc:entrants') : null;
           const fLocal = typeof window !== 'undefined' ? window.localStorage.getItem('yc:fixtures') : null;
           if (cancelled) return;
-
           setEntrants(eLocal ? JSON.parse(eLocal) : []);
           setFixtures(fLocal ? JSON.parse(fLocal) : []);
         }
@@ -87,9 +84,7 @@ export default function FixturesPublic() {
         if (!cancelled) setLoading(false);
       }
     })();
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [season]);
 
   const entrantsById = useMemo(() => {
@@ -131,8 +126,7 @@ export default function FixturesPublic() {
                         : '';
                     return (
                       <li key={f.id}>
-                        {h?.club ?? 'TBD'} vs {a?.club ?? 'TBD'} @ {when}
-                        {score}
+                        {h?.club ?? 'TBD'} vs {a?.club ?? 'TBD'} @ {when}{score}
                       </li>
                     );
                   })}
