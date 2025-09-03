@@ -57,11 +57,9 @@ export default function FixturesPage() {
   const byRound = useMemo(() => {
     const map: Record<string, Fx[]> = {};
     for (const fx of fixtures) {
-      const st = fx.stage ?? ''; // stage may be undefined/null
+      const st = fx.stage ?? '';
 
-      const baseStage =
-        st === 'groups' ? 'Groups' : st ? st.replace(/_/g, ' ') : 'Unknown';
-
+      const baseStage = st === 'groups' ? 'Groups' : st ? st.replace(/_/g, ' ') : 'Unknown';
       const baseRound =
         st === 'groups'
           ? (fx.round ? `R${fx.round}` : '')
@@ -82,15 +80,11 @@ export default function FixturesPage() {
     return map;
   }, [fixtures]);
 
-  // Accept string | null | undefined to satisfy TS where Supabase may return null
-  const managerOf = (id: string | null | undefined) => {
-    if (!id) return 'TBC';
-    return entrants.find((e) => e.id === id)?.manager ?? 'TBC';
-  };
-  const clubOf = (id: string | null | undefined) => {
-    if (!id) return 'TBC';
-    return entrants.find((e) => e.id === id)?.club ?? 'TBC';
-  };
+  // helpers accept null/undefined since Supabase can return nulls
+  const managerOf = (id: string | null | undefined) =>
+    id ? (entrants.find((e) => e.id === id)?.manager ?? 'TBC') : 'TBC';
+  const clubOf = (id: string | null | undefined) =>
+    id ? (entrants.find((e) => e.id === id)?.club ?? 'TBC') : 'TBC';
 
   return (
     <div className="grid lg:grid-cols-3 gap-4">
@@ -143,7 +137,7 @@ export default function FixturesPage() {
                           <div className="text-xs opacity-70">{managerOf(fx.awayId)}</div>
                         </td>
                         <td className="py-1 text-right">
-                          {fx.home_goals ?? '–'} : {fx.away_goals ?? '–'}
+                          {fx.homeGoals ?? '–'} : {fx.awayGoals ?? '–'}
                         </td>
                       </tr>
                     ))}
@@ -157,9 +151,9 @@ export default function FixturesPage() {
 
       <SectionCard title="Notes">
         <ul className="list-disc pl-5 text-sm space-y-2 opacity-80">
-          <li>Using <code>homeId</code>/<code>awayId</code> to match your <code>Fixture</code> type.</li>
-          <li>This page is <strong>force-dynamic</strong> and <strong>no-store</strong> to avoid prerendering.</li>
-          <li>IDs from Supabase can be <code>null</code>; helpers guard for that.</li>
+          <li>Using <code>homeId</code>/<code>awayId</code> and <code>homeGoals</code>/<code>awayGoals</code> to match your <code>Fixture</code> type.</li>
+          <li>This page is <strong>force-dynamic</strong> and <strong>no-store</strong> to avoid prerendering issues.</li>
+          <li>IDs and scores from Supabase can be <code>null</code>; helpers guard for that.</li>
         </ul>
       </SectionCard>
     </div>
