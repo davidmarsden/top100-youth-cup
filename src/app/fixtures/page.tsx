@@ -52,15 +52,19 @@ export default function FixturesPage() {
   const byRound = useMemo(() => {
     const map: Record<string, Fx[]> = {};
     for (const fx of fixtures) {
-      // Build a label using only fields on Fixture
-      const baseStage =
-        fx.stage === 'groups'
-          ? 'Groups'
-          : // knockout stages come across via stage (e.g., 'youth_cup', 'youth_shield')
-            fx.stage.replace('_', ' ');
+      const st = fx.stage ?? ''; // <- guard stage possibly undefined
 
+      // Stage label
+      const baseStage =
+        st === 'groups'
+          ? 'Groups'
+          : st
+          ? st.replace(/_/g, ' ')
+          : 'Unknown';
+
+      // Round label
       const baseRound =
-        fx.stage === 'groups'
+        st === 'groups'
           ? (fx.round ? `R${fx.round}` : '')
           : (fx.round_label ?? (fx.round ? `R${fx.round}` : ''));
 
