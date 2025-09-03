@@ -1,203 +1,218 @@
 'use client';
-import React, { useMemo, useRef, useState } from 'react';
+
+import React, { useMemo, useState } from 'react';
 import SectionCard from '@/components/SectionCard';
-import Confetti from '@/components/Confetti';
+import { useAdmin } from '@/components/AdminGate';
 
-/** —— Deterministic helpers —— */
-function hashString(s: string){ // djb2
-  let h = 5381;
-  for (let i=0;i<s.length;i++){ h = ((h<<5)+h) + s.charCodeAt(i); h |= 0; }
-  return h>>>0;
+// simple, deterministic PRNG from seed string
+function mulberry32(a: number) {
+  return function () {
+    let t = (a += 0x6d2b79f5);
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
 }
-function xorshift32(seed: number){
-  let x = seed>>>0;
-  return function(){ // returns [0,1)
-    x ^= x << 13; x >>>= 0;
-    x ^= x << 17; x >>>= 0;
-    x ^= x << 5;  x >>>= 0;
-    return ((x>>>0) / 0xFFFFFFFF);
-  }
-}
-const CANON: Record<string,string> = {
-  'Anderlect': 'Anderlecht',
-  'Atletico Madrid': 'Atlético Madrid',
-  'Bayern Munich': 'Bayern München',
-  'Besiktas': 'Beşiktaş',
-  'Dortmund': 'Borussia Dortmund',
-  'Leverkusen': 'Bayer Leverkusen',
-  'Man City': 'Manchester City',
-  'Milan': 'AC Milan',
-  'Monchengladbach': 'Borussia Mönchengladbach',
-  'Sc Internacional': 'SC Internacional',
-  'Sevlle': 'Sevilla',
-  'Tottenham': 'Tottenham Hotspur',
-};
-function canonicalize(lines: string[]): string[]{
-  const out: string[] = []; const seen = new Set<string>();
-  for (const raw of lines){
-    const t = raw.trim(); if (!t) continue;
-    const name = CANON[t] ?? t;
-    if (!seen.has(name)){ seen.add(name); out.push(name); }
-  }
-  return out;
-}
-function shuffleDeterministic<T>(arr: T[], seedStr: string): T[]{
-  const rng = xorshift32(hashString(seedStr)); const a = arr.slice();
-  for (let i=a.length-1; i>0; i--){
-    const j = Math.floor(rng() * (i+1));
-    [a[i], a[j]] = [a[j], a[i]];
-  }
-  return a;
+function hashString(str: string) {
+  let h = 2166136261 >>> 0;
+  for (let i = 0; i < str.length; i++) h = Math.imul(h ^ str.charCodeAt(i), 16777619);
+  return h >>> 0;
 }
 
-/** —— Minimal sound (WebAudio): drumroll + hit —— */
-function playDrumroll(seconds = 3.2){
-  try {
-    const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.type = 'triangle';
-    osc.frequency.setValueAtTime(110, ctx.currentTime);
-    osc.frequency.exponentialRampToValueAtTime(55, ctx.currentTime + seconds);
-    gain.gain.setValueAtTime(0.0001, ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.15, ctx.currentTime + 0.2);
-    gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + seconds);
-    osc.connect(gain).connect(ctx.destination);
-    osc.start(); osc.stop(ctx.currentTime + seconds + 0.05);
-  } catch {}
-}
-function playHit(){
-  try {
-    const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
-    const o = ctx.createOscillator(); const g = ctx.createGain();
-    o.type = 'sine'; o.frequency.setValueAtTime(880, ctx.currentTime);
-    g.gain.setValueAtTime(0.2, ctx.currentTime);
-    g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.25);
-    o.connect(g).connect(ctx.destination); o.start(); o.stop(ctx.currentTime + 0.3);
-  } catch {}
-}
+export default function PrizeDrawPage() {
+  const { admin } = useAdmin();
 
-/** —— Default text area empty for flexibility —— */
-const DEFAULT_LIST = ``;
+  const [seed, setSeed] = useState(
+    () => `S26-${new Date().toISOString().slice(0, 10)}`
+  );
 
-export default function PrizeDrawPage(){
-  const [seed, setSeed] = useState('S26-2025-09-03');
-  const [textarea, setTextarea] = useState(DEFAULT_LIST);
-  const cleaned = useMemo(()=> canonicalize(textarea.split(/\r?\n/)), [textarea]);
-  const shuffled = useMemo(()=> shuffleDeterministic(cleaned, seed), [cleaned, seed]);
+  const [raw, setRaw] = useState<string>('');
 
-  // Theatre state
-  const [isDrawing, setIsDrawing] = useState(false);
+  // canonicalize lines to unique managers (trim, collapse whitespace)
+  const canonical = useMemo(() => {
+    const lines = raw
+      .split('\n')
+      .map((s) => s.trim())
+      .filter(Boolean);
+    const seen = new Set<string>();
+    const result: string[] = [];
+    for (const line of lines) {
+      const name = line.replace(/\s+/g, ' ');
+      const key = name.toLowerCase();
+      if (!seen.has(key)) {
+        seen.add(key);
+        result.push(name);
+      }
+    }
+    return result;
+  }, [raw]);
+
+  const fullOrder = useMemo(() => {
+    const arr = [...canonical];
+    if (!arr.length) return arr;
+    const rnd = mulberry32(hashString(seed));
+    // Fisher-Yates with deterministic rnd
+    for (let i = arr.length - 1; i > 0; i--) {
+      const j = Math.floor(rnd() * (i + 1));
+      [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+    return arr;
+  }, [canonical, seed]);
+
   const [revealed, setRevealed] = useState<string[]>([]);
-  const [confetti, setConfetti] = useState(false);
-  const tickerRef = useRef<number | null>(null);
+  const [running, setRunning] = useState(false);
 
-  const startDraw = async () => {
-    if (cleaned.length < 3) { alert('Need at least 3 eligible names.'); return; }
-    setIsDrawing(true);
-    setRevealed([]); setConfetti(false);
+  async function startDraw() {
+    if (!admin) return alert('Admin only.');
+    if (fullOrder.length < 3) return alert('Need at least 3 eligible managers.');
+    setRevealed([]);
+    setRunning(true);
 
-    const winners = shuffled.slice(0, 3);
-    playDrumroll(3.2);
+    // reveal first 3 one-by-one (the winners), then stop
+    const winners = fullOrder.slice(0, 3);
+    for (const w of winners) {
+      // tiny delay for theatre
+      // biome-ignore lint/suspicious/noAwaitInLoop: reveal with pauses
+      await new Promise((r) => setTimeout(r, 900));
+      setRevealed((prev) => [...prev, w]);
+    }
+    setRunning(false);
+  }
 
-    const revealOne = (idx: number) => {
-      const spinMs = 1800; const interval = 60;
-      const start = performance.now();
-      if (tickerRef.current) window.clearInterval(tickerRef.current);
-      let i = 0;
-      tickerRef.current = window.setInterval(() => {
-        i++;
-        const el = document.getElementById('ticker');
-        if (!el) return;
-        el.textContent = cleaned[(i % cleaned.length)];
-        if (performance.now() - start > spinMs) {
-          window.clearInterval(tickerRef.current!);
-          const w = winners[idx];
-          el.textContent = w;
-          setRevealed((r) => [...r, w]);
-          playHit();
-          if (idx === 2) setConfetti(true);
-        }
-      }, interval) as unknown as number;
-    };
+  function copyAnnouncement() {
+    const winners = fullOrder.slice(0, 3);
+    const text =
+      `🎁 Top 100 Youth Cup — Prize Draw (Season S26)\n\n` +
+      `Seed: ${seed}\n` +
+      `Winners:\n1) ${winners[0] ?? '—'}\n2) ${winners[1] ?? '—'}\n3) ${winners[2] ?? '—'}\n\n` +
+      `(Deterministic, reproducible shuffle. Full order available on the site.)`;
+    navigator.clipboard?.writeText(text);
+    alert('Copied announcement to clipboard.');
+  }
 
-    revealOne(0);
-    await new Promise(r => setTimeout(r, 3500));
-    revealOne(1);
-    await new Promise(r => setTimeout(r, 3500));
-    revealOne(2);
-    await new Promise(r => setTimeout(r, 800));
-    setIsDrawing(false);
-  };
+  const winnersPreview = fullOrder.slice(0, 3);
 
-  const exportJSON = () => {
-    const data = { seed, eligible: cleaned, shuffled, winners: shuffled.slice(0,3), timestamp: new Date().toISOString() };
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a'); a.href = url; a.download = `yc-prizedraw-${seed}.json`; a.click();
-    URL.revokeObjectURL(url);
-  };
-
-  const copyAnnouncement = async () => {
-    const w = shuffled.slice(0,3);
-    const lines = [
-      `🎉 Top 100 Youth Cup S26 — Prize Draw Winners`,
-      `Seed: ${seed}`,
-      `1) ${w[0]}`,
-      `2) ${w[1]}`,
-      `3) ${w[2]}`,
-      `(${new Date().toLocaleString()})`
-    ];
-    await navigator.clipboard.writeText(lines.join('\n'));
-    alert('Copied winners announcement to clipboard!');
-  };
+  const inputDisabled = !admin || running;
+  const actionDisabled = !admin || running || fullOrder.length < 3;
 
   return (
-    <div className="relative">
-      <Confetti fire={confetti} />
-      <div className="grid md:grid-cols-2 gap-4">
-        <SectionCard title="Prize Draw — Input">
-          <div className="space-y-3">
-            <div>
-              <label className="block text-sm opacity-80">Seed (public & reproducible)</label>
-              <input className="w-full px-3 py-2 rounded-xl bg-white/10 border border-white/20" value={seed} onChange={e=>setSeed(e.target.value)} />
-              <p className="text-xs opacity-70 mt-1">Tip: include Season + ISO date/time (e.g., S26-2025-09-05T21:00Z).</p>
-            </div>
-            <div>
-              <label className="block text-sm opacity-80">Eligible names (one per line)</label>
-              <textarea className="w-full min-h-[220px] px-3 py-2 rounded-xl bg-white/10 border border-white/20" value={textarea} onChange={e=>setTextarea(e.target.value)} placeholder="Paste manager names here..." />
-              <p className="text-xs opacity-70 mt-1">For managers, we simply trim & de-duplicate (club canonicalization is kept for legacy lists).</p>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <button className="btn" onClick={()=>setTextarea(canonicalize(textarea.split(/\r?\n/)).join('\n'))}>Apply Canonical (safe)</button>
-              <button className="btn" onClick={exportJSON}>Export Signed JSON</button>
-              <button className="btn" onClick={copyAnnouncement}>Copy Announcement</button>
-              <button className="btn-primary" onClick={startDraw} disabled={isDrawing}>🎲 Start Draw</button>
-            </div>
-          </div>
-        </SectionCard>
+    <div className="grid md:grid-cols-2 gap-4">
+      <SectionCard title="Prize Draw — Input">
+        {!admin && (
+          <p className="mb-3 text-sm opacity-80">
+            You are viewing in <strong>non-admin</strong> mode. Admins can paste the eligible list,
+            set a public seed, and run the draw. Please ask the organiser to sign in.
+          </p>
+        )}
 
-        <SectionCard title="Theatre & Results">
-          <div className="space-y-4">
-            <div className="h-16 flex items-center justify-center bg-white/5 border border-white/10 rounded-xl overflow-hidden">
-              <div id="ticker" className="text-xl font-bold animate-ticker text-center px-3">Ready?</div>
-            </div>
-            <div>
-              <div className="opacity-90 mb-2">Revealed Winners</div>
-              <ol className="list-decimal list-inside space-y-2 text-lg">
-                {revealed.map((w,i)=> <li key={i} className="font-semibold">{w}</li>)}
-              </ol>
-              {!revealed.length && <p className="text-sm opacity-70">Press “Start Draw” to reveal winners one by one.</p>}
-            </div>
-            <div>
-              <div className="opacity-90 mb-1">Full shuffled order (deterministic)</div>
-              <ol className="list-decimal list-inside space-y-1 max-h-[240px] overflow-auto pr-2">
-                {shuffled.map((n,i)=> <li key={i}>{n}</li>)}
-              </ol>
-            </div>
+        <label className="block text-sm opacity-80 mb-1">Seed (public & reproducible)</label>
+        <input
+          className="w-full px-3 py-2 rounded-xl bg-white/10 border border-white/20 mb-3"
+          value={seed}
+          onChange={(e) => setSeed(e.target.value)}
+          disabled={inputDisabled}
+        />
+        <p className="text-xs opacity-70 mb-2">
+          Tip: include Season + ISO date/time (e.g., <code>S26-2025-09-05T21:00Z</code>).
+        </p>
+
+        <label className="block text-sm opacity-80 mb-1">Eligible names (one per line)</label>
+        <textarea
+          className="w-full min-h-[220px] px-3 py-2 rounded-xl bg-white/10 border border-white/20"
+          placeholder="Paste manager names here..."
+          value={raw}
+          onChange={(e) => setRaw(e.target.value)}
+          disabled={inputDisabled}
+        />
+
+        <div className="flex flex-wrap gap-2 mt-3">
+          <button
+            className="btn"
+            onClick={copyAnnouncement}
+            disabled={fullOrder.length < 3}
+            title={fullOrder.length < 3 ? 'Need at least 3 names' : 'Copy announcement text'}
+          >
+            Copy Announcement
+          </button>
+
+          {/* Admin-only controls */}
+          {admin && (
+            <>
+              <button
+                className="btn bg-white text-black"
+                onClick={startDraw}
+                disabled={actionDisabled}
+                title={!admin ? 'Admin only' : undefined}
+              >
+                🎲 Start Draw
+              </button>
+              <button
+                className="btn"
+                onClick={() => {
+                  if (!admin) return;
+                  const blob = new Blob(
+                    [JSON.stringify({ seed, canonical, fullOrder }, null, 2)],
+                    { type: 'application/json' }
+                  );
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement('a');
+                  a.href = url;
+                  a.download = `prize-draw-S26-${new Date().toISOString().slice(0, 10)}.json`;
+                  a.click();
+                  URL.revokeObjectURL(url);
+                }}
+                disabled={fullOrder.length === 0}
+              >
+                Export Signed JSON
+              </button>
+            </>
+          )}
+        </div>
+      </SectionCard>
+
+      <SectionCard title="Theatre & Results">
+        <div className="rounded-xl bg-white/5 border border-white/10 p-3 mb-3">
+          <div className="text-lg font-semibold">
+            {running ? 'Drawing…' : revealed.length ? 'Winners' : 'Ready?'}
           </div>
-        </SectionCard>
-      </div>
+        </div>
+
+        <div className="mb-4">
+          <h3 className="font-semibold mb-2">Revealed Winners</h3>
+          {!revealed.length ? (
+            <p className="text-sm opacity-80">Press “Start Draw” to reveal winners one by one.</p>
+          ) : (
+            <ol className="list-decimal list-inside space-y-1">
+              {revealed.map((w) => (
+                <li key={w} className="text-lg">{w}</li>
+              ))}
+            </ol>
+          )}
+        </div>
+
+        <div className="mb-4">
+          <h3 className="font-semibold mb-2">Full shuffled order (deterministic)</h3>
+          {fullOrder.length ? (
+            <ol className="list-decimal list-inside text-sm space-y-0.5 max-h-64 overflow-auto">
+              {fullOrder.map((n) => (
+                <li key={n}>{n}</li>
+              ))}
+            </ol>
+          ) : (
+            <p className="text-sm opacity-80">Provide names to generate a list.</p>
+          )}
+        </div>
+
+        {!admin && fullOrder.length >= 3 && (
+          <div className="mt-3 text-sm opacity-80">
+            <p>
+              Winners preview (first 3 in the deterministic order):{' '}
+              <strong>{winnersPreview.join(', ')}</strong>
+            </p>
+            <p>Only admins can trigger the reveal animation and export.</p>
+          </div>
+        )}
+      </SectionCard>
     </div>
   );
 }
