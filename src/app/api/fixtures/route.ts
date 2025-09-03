@@ -1,14 +1,28 @@
+// src/app/api/fixtures/route.ts
 import { NextRequest, NextResponse } from 'next/server';
-import { supabase } from '@/server/supabase';
-import { isAdminRequest } from '@/server/admin';
+import { createClient } from '@supabase/supabase-js';
+import type { Fixture } from '@/lib/types';
 
-// example mapper inside /api/fixtures/route.ts
+// --- Supabase (server) client ---
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY!; // server-only
+const sb = createClient(supabaseUrl, serviceRoleKey, {
+  auth: { persistSession: false },
+});
+
+// --- Admin check (server-side header injected by /admin actions) ---
+function isAdmin(req: NextRequest) {
+  const key = req.headers.get('x-admin-key');
+  return key && process.env.ADMIN_KEY && key === process.env.ADMIN_KEY;
+}
+
+// --- Mappers: DB (snake_case) <-> API (camelCase) ---
 function toCamelRow(r: any): Fixture {
   return {
     id: r.id,
     season: r.season,
     stage: r.stage,
-    round: r.round,
+    round: r.round ?? null,
     round_label: r.round_label ?? null,
     stage_label: r.stage_label ?? null,
     group: r.group ?? null,
@@ -24,67 +38,110 @@ function toCamelRow(r: any): Fixture {
   };
 }
 
-export async function GET(req: NextRequest) {
-  if (!supabase) return NextResponse.json({ fixtures: [] });
-  const { searchParams } = new URL(req.url);
-  const season = searchParams.get('season') || 'S26';
-  const { data: seasonRow, error: es } = await supabase.from('seasons').select('*').eq('code', season).single();
-  if (es || !seasonRow) return NextResponse.json({ fixtures: [] });
+function toSnakeRow(fx: Partial<Fixture>) {
+  return {
+    id: fx.id,
+    season: fx.season,
+    stage: fx.stage,
+    round: fx.round ?? null,
+    round_label: fx.round_label ?? null,
+    stage_label: fx.stage_label ?? null,
+    group: fx.group ?? null,
+    scheduled_at: fx.scheduled_at ?? null,
+    home_id: fx.homeId ?? null,
+    away_id: fx.awayId ?? null,
+    home_goals: fx.homeGoals ?? null,
+    away_goals: fx.awayGoals ?? null,
+    status: fx.status ?? null,
+    notes: fx.notes ?? null,
+    double_leg: fx.double_leg ?? null,
+    leg: fx.leg ?? null,
+  };
+}
 
-  const { data, error } = await supabase
+// --- Helpers ---
+function bad(msg: string, code = 400) {
+  return NextResponse.json({ error: msg }, { status: code });
+}
+
+// GET /api/fixtures?season=Sxx
+export async function GET(req: NextRequest) {
+  const { searchParams } = new URL(req.url);
+  const season = searchParams.get('season');
+  if (!season) return bad('Missing season');
+
+  const { data, error } = await sb
     .from('fixtures')
     .select('*')
-    .eq('season_id', seasonRow.id)
-    .order('round_label', { ascending: true })
-    .order('created_at', { ascending: true });
+    .eq('season', season)
+    .order('stage', { ascending: true })
+    .order('round', { ascending: true })
+    .order('group', { ascending: true });
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 400 });
-  return NextResponse.json({ fixtures: data });
+  if (error) return bad(error.message, 500);
+
+  const rows = (data ?? []).map(toCamelRow);
+  return NextResponse.json(rows, { status: 200 });
 }
 
-/** Bulk upsert fixtures (admin only). Body: { season, fixtures: [...]} */
+// POST /api/fixtures  (admin)
+// body: Fixture (or Partial<Fixture> with required fields)
 export async function POST(req: NextRequest) {
-  if (!supabase) return NextResponse.json({ error: 'Supabase not configured' }, { status: 400 });
-  if (!isAdminRequest(req.headers)) return NextResponse.json({ error: 'forbidden' }, { status: 403 });
+  if (!isAdmin(req)) return bad('Unauthorized', 401);
 
-  const body = await req.json();
-  const code = body.season || 'S26';
-  const fixtures = body.fixtures || [];
-  const { data: seasonRow, error: es } = await supabase.from('seasons').select('*').eq('code', code).single();
-  if (es || !seasonRow) return NextResponse.json({ error: es?.message || 'Season not found' }, { status: 404 });
+  const body = (await req.json()) as Partial<Fixture>;
+  if (!body?.season || !body?.stage)
+    return bad('Missing required fields: season, stage');
 
-  const rows = fixtures.map((f: any) => ({
-    id: f.id, // allow client-generated ids for stable refs
-    season_id: seasonRow.id,
-    stage: f.stage,                  // 'groups' | 'youth_cup' | 'youth_shield'
-    group_id: f.group_id ?? null,    // optional
-    round_label: f.round_label,      // e.g. 'Group R1' or 'Cup QF (Leg 2)'
-    leg: f.leg ?? 'single',          // 'single' | 'first' | 'second'
-    home_entrant_id: f.homeId ?? f.home_entrant_id ?? null,
-    away_entrant_id: f.awayId ?? f.away_entrant_id ?? null,
-    scheduled_at: f.scheduled_at ?? null,
-    home_score: f.home_score ?? null,
-    away_score: f.away_score ?? null,
-    status: f.status ?? 'pending',
-    notes: f.notes ?? null,
-  }));
+  const toInsert = toSnakeRow(body);
 
-  const { error } = await supabase.from('fixtures').upsert(rows, { onConflict: 'id' });
-  if (error) return NextResponse.json({ error: error.message }, { status: 400 });
-  return NextResponse.json({ ok: true });
+  const { data, error } = await sb.from('fixtures').insert(toInsert).select('*').single();
+  if (error) return bad(error.message, 500);
+
+  return NextResponse.json(toCamelRow(data), { status: 201 });
 }
 
-/** Admin delete all fixtures for a season */
+// PATCH /api/fixtures  (admin)
+// body: { id: string, ...fieldsToUpdate }
+export async function PATCH(req: NextRequest) {
+  if (!isAdmin(req)) return bad('Unauthorized', 401);
+
+  const body = (await req.json()) as Partial<Fixture>;
+  if (!body?.id) return bad('Missing id');
+
+  const updates = toSnakeRow(body);
+  // ensure we don't try to update undefined keys
+  Object.keys(updates).forEach((k) => {
+    if (updates[k as keyof typeof updates] === undefined) {
+      delete (updates as any)[k];
+    }
+  });
+
+  const { data, error } = await sb
+    .from('fixtures')
+    .update(updates)
+    .eq('id', body.id)
+    .select('*')
+    .single();
+
+  if (error) return bad(error.message, 500);
+
+  return NextResponse.json(toCamelRow(data), { status: 200 });
+}
+
+// DELETE /api/fixtures?season=Sxx  (admin) — purge a season’s fixtures
 export async function DELETE(req: NextRequest) {
-  if (!supabase) return NextResponse.json({ error: 'Supabase not configured' }, { status: 400 });
-  if (!isAdminRequest(req.headers)) return NextResponse.json({ error: 'forbidden' }, { status: 403 });
+  if (!isAdmin(req)) return bad('Unauthorized', 401);
 
   const { searchParams } = new URL(req.url);
-  const code = searchParams.get('season') || 'S26';
-  const { data: seasonRow, error: es } = await supabase.from('seasons').select('*').eq('code', code).single();
-  if (es || !seasonRow) return NextResponse.json({ error: es?.message || 'Season not found' }, { status: 404 });
+  const season = searchParams.get('season');
+  if (!season) return bad('Missing season');
 
-  const { error } = await supabase.from('fixtures').delete().eq('season_id', seasonRow.id);
-  if (error) return NextResponse.json({ error: error.message }, { status: 400 });
-  return NextResponse.json({ ok: true });
+  const { error } = await sb.from('fixtures').delete().eq('season', season);
+  if (error) return bad(error.message, 500);
+
+  return NextResponse.json({ ok: true }, { status: 200 });
 }
+
+// Next.js route options (API routes don’t use page revalidate; avoid ISR config here)
+export const runtime = 'nodejs';
