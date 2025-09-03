@@ -4,11 +4,13 @@ import { usePathname } from 'next/navigation';
 import React from 'react';
 
 const items = [
-  { href: '/', label: 'Dashboard' },
+  { href: '/', label: 'Dashboard' },        // can be read-only if you want
   { href: '/register', label: 'Register' },
+  { href: '/fixtures', label: 'Fixtures' },
   { href: '/prize-draw', label: 'Prize Draw' },
-  { href: '/schedule', label: 'Schedule' },
-	 { href: '/seasons', label: 'Seasons' },
+  { href: '/schedule', label: 'Schedule' }, // admin-heavy, but okay to view
+  { href: '/seasons', label: 'Seasons' },
+  // { href: '/admin', label: 'Admin' },     // if you split
 ];
 
 export default function TopNav(){
