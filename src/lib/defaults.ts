@@ -7,7 +7,8 @@ export const defaultSettings: Settings = {
   timezone: 'Europe/London',
   pointsWin: 3, pointsDraw: 1, pointsLoss: 0,
   maxGroupSize: 4,
-  bestOfThirdsToFill: true
+  bestOfThirdsToFill: true,
+  doubleRoundRobin: false, // default off
 };
 
 export const sampleEntrants: Entrant[] = [
