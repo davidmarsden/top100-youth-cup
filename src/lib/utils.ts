@@ -1,19 +1,48 @@
-export const uid = () =>
-  Math.random().toString(36).slice(2,10) + Date.now().toString(36).slice(-4);
+// src/lib/utils.ts
 
-export const save = (k:string, v:any) => {
-  if (typeof localStorage !== 'undefined') localStorage.setItem(k, JSON.stringify(v));
-};
+/**
+ * Small persistence helpers that are SSR-safe.
+ * We no-op on the server (Netlify build) and only touch localStorage in the browser.
+ */
 
-export const load = <T,>(k:string, fallback:T):T => {
-  if (typeof localStorage === 'undefined') return fallback;
+export async function load<T>(
+  key: string,
+  fallback?: T // ← make optional so callers can pass just the key
+): Promise<T | undefined> {
+  // During build/prerender there is no window/localStorage
+  if (typeof window === "undefined") return fallback;
+
   try {
-    const raw = localStorage.getItem(k);
-    return raw ? JSON.parse(raw) as T : fallback;
+    const raw = window.localStorage.getItem(key);
+    if (!raw) return fallback;
+    return JSON.parse(raw) as T;
   } catch {
     return fallback;
   }
-};
+}
 
-export const makeGroupLabels = (n:number) =>
-  "ABCDEFGHIJKLMNOPQRSTUVWXYZ".slice(0, n).split("");
+export async function save<T>(key: string, value: T): Promise<void> {
+  if (typeof window === "undefined") return; // SSR no-op
+  try {
+    window.localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    // ignore quota/JSON errors
+  }
+}
+
+export async function remove(key: string): Promise<void> {
+  if (typeof window === "undefined") return; // SSR no-op
+  try {
+    window.localStorage.removeItem(key);
+  } catch {
+    // ignore
+  }
+}
+
+/**
+ * Build a namespaced key (handy when you have per-season storage).
+ * Example: ns("entrants", "S26") -> "S26:entrants"
+ */
+export function ns(key: string, namespace?: string) {
+  return namespace ? `${namespace}:${key}` : key;
+}
