@@ -6,14 +6,13 @@ import SectionCard from '@/components/SectionCard';
 import { useAdmin } from '@/components/AdminGate';
 import { Fixture, Entrant } from '@/lib/types';
 
-// --- IMPORTANT: keep these as primitives only ---
-export const dynamic = 'force-dynamic';      // no static HTML for this page
-export const revalidate = false;             // disable ISR on this route
-export const fetchCache = 'force-no-store';  // (extra safety for Next 14)
+// Never prerender/cache this page
+export const dynamic = 'force-dynamic';
+export const revalidate = false;
+export const fetchCache = 'force-no-store';
 
 type Fx = Fixture;
 
-// Helpers
 const fmt = (iso?: string) =>
   iso ? new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) : '—';
 
@@ -21,13 +20,11 @@ export default function FixturesPage() {
   const { admin } = useAdmin();
   const sp = useSearchParams();
 
-  // NEVER pass undefined to useState when generic is string – default to empty string
   const [season, setSeason] = useState<string>(sp.get('season') ?? '');
   const [entrants, setEntrants] = useState<Entrant[]>([]);
   const [fixtures, setFixtures] = useState<Fx[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Load data (from Supabase via API routes)
   useEffect(() => {
     let alive = true;
     (async () => {
@@ -57,20 +54,25 @@ export default function FixturesPage() {
     for (const fx of fixtures) {
       const key =
         fx.stage === 'groups'
-          ? `Group ${fx.group_label ?? fx.group ?? ''} — R${fx.round}`
+          // ✅ use existing fields; no group_label on Fixture
+          ? `Group ${fx.group ?? ''} — R${fx.round ?? ''}`.trim()
           : `${fx.stage_label ?? fx.stage} ${fx.round_label ?? ''}`.trim();
+
       if (!map[key]) map[key] = [];
       map[key].push(fx);
     }
-    // stable sort by scheduled date then id
     for (const k of Object.keys(map)) {
-      map[k].sort((a, b) => (a.scheduled_at || '').localeCompare(b.scheduled_at || '') || a.id.localeCompare(b.id));
+      map[k].sort(
+        (a, b) =>
+          (a.scheduled_at || '').localeCompare(b.scheduled_at || '') ||
+          a.id.localeCompare(b.id)
+      );
     }
     return map;
   }, [fixtures]);
 
   const managerOf = (id?: string) => entrants.find(e => e.id === id)?.manager ?? 'TBC';
-  const clubOf = (id?: string) => entrants.find(e => e.id === id)?.club ?? 'TBC';
+  const clubOf    = (id?: string) => entrants.find(e => e.id === id)?.club ?? 'TBC';
 
   return (
     <div className="grid lg:grid-cols-3 gap-4">
@@ -83,12 +85,8 @@ export default function FixturesPage() {
             placeholder="e.g., S26"
             className="w-full px-3 py-2 rounded-xl bg-white/10 border border-white/20"
           />
-          <p className="text-xs opacity-70">
-            Leave blank to show current season (as configured on the server).
-          </p>
-          <p className="text-xs opacity-70">
-            Mode: <span className="font-semibold">{admin ? 'Admin' : 'Viewer'}</span>
-          </p>
+          <p className="text-xs opacity-70">Leave blank to show current season (server default).</p>
+          <p className="text-xs opacity-70">Mode: <span className="font-semibold">{admin ? 'Admin' : 'Viewer'}</span></p>
         </div>
       </SectionCard>
 
@@ -139,8 +137,7 @@ export default function FixturesPage() {
 
       <SectionCard title="Notes">
         <ul className="list-disc pl-5 text-sm space-y-2 opacity-80">
-          <li>This page is <strong>force-dynamic</strong> and <strong>no-store</strong>; it never prerenders.</li>
-          <li>If you still see the revalidate error, search your repo for <code>export const revalidate</code> within <code>/src/app/fixtures</code> and ensure it’s only set to <code>false</code> (not an object).</li>
+          <li>This page is <strong>force-dynamic</strong> and <strong>no-store</strong> to avoid prerendering.</li>
         </ul>
       </SectionCard>
     </div>
