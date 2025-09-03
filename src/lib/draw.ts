@@ -11,14 +11,17 @@ export function assignGroups(entrants: Entrant[], settings: Settings): GroupTeam
   return out;
 }
 
-export function generateGroupFixtures(groups: GroupTeam[]): Fixture[] {
+export function generateGroupFixtures(groups: GroupTeam[], doubleRound = false): Fixture[] {
   const by: Record<string,string[]> = {};
   for (const g of groups) { by[g.group] ??= []; by[g.group].push(g.entrantId); }
   const fixtures: Fixture[] = [];
+
   for (const G of Object.keys(by)) {
     const ids = by[G];
     const pairs: [string,string][] = [];
     for (let i=0;i<ids.length;i++) for (let j=i+1;j<ids.length;j++) pairs.push([ids[i], ids[j]]);
+
+    // Single round-robin rounds
     const rounds: [string,string][][] = [];
     for (const p of pairs) {
       let placed = false;
@@ -27,10 +30,26 @@ export function generateGroupFixtures(groups: GroupTeam[]): Fixture[] {
       }
       if (!placed) rounds.push([p]);
     }
+
+    // Add first leg
     rounds.forEach((pairList, idx)=>{
       for (const [homeId, awayId] of pairList)
         fixtures.push({ id: uid(), group:G, round: idx+1, homeId, awayId, status:'pending', stage:'groups' });
     });
+
+    if (doubleRound) {
+      const base = fixtures.filter(f=>f.group===G); // we just added these
+      const maxRound = Math.max(...base.map(f=>f.round));
+      // Return legs with swapped home/away
+      base.forEach(f=>{
+        fixtures.push({
+          id: uid(), group:G,
+          round: f.round + maxRound,
+          homeId: f.awayId, awayId: f.homeId,
+          status:'pending', stage:'groups'
+        });
+      });
+    }
   }
   return fixtures.sort((a,b)=> a.group!<b.group!?-1:a.group!>b.group!?1:a.round-b.round);
 }
