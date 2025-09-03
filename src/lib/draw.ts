@@ -28,7 +28,8 @@ export function generateGroupFixtures(groups: GroupTeam[]): Fixture[] {
       if (!placed) rounds.push([p]);
     }
     rounds.forEach((pairList, idx)=>{
-      for (const [homeId, awayId] of pairList) fixtures.push({ id: uid(), group:G, round: idx+1, homeId, awayId, status:'pending', stage:'groups' });
+      for (const [homeId, awayId] of pairList)
+        fixtures.push({ id: uid(), group:G, round: idx+1, homeId, awayId, status:'pending', stage:'groups' });
     });
   }
   return fixtures.sort((a,b)=> a.group!<b.group!?-1:a.group!>b.group!?1:a.round-b.round);
@@ -49,7 +50,6 @@ export function computeStandings(fixtures: Fixture[], settings: Settings, entran
     else if (f.homeScore<f.awayScore){ B.pts+=settings.pointsWin; A.pts+=settings.pointsLoss; B.won++; A.lost++; }
     else { A.pts+=settings.pointsDraw; B.pts+=settings.pointsDraw; A.drawn++; B.drawn++; }
   }
-  // ensure all
   for (const e of entrants) ensure(e.id);
   return Object.values(map).sort((a,b)=> a.group===b.group ? (b.pts-a.pts || b.gd-a.gd || b.gf-a.gf) : a.group.localeCompare(b.group));
 }
@@ -69,13 +69,13 @@ export function computeKO32(standings: Standing[], groups: GroupTeam[], settings
   const remaining = Math.max(0, 32 - qualifiers.length);
   if (remaining>0 && settings.bestOfThirdsToFill){
     const thirds = groupKeys.map(g=>grouped[g][2]).filter(Boolean)
-      .sort((a,b)=> b.pts-a.pts || b.gd-a.gd || b.gf-a.gf).slice(0, remaining).map(s=>s.entrantId);
+      .sort((a:any,b:any)=> b.pts-a.pts || b.gd-a.gd || b.gf-a.gf).slice(0, remaining).map((s:any)=>s.entrantId);
     qualifiers = qualifiers.concat(thirds);
   }
   qualifiers = qualifiers.slice(0,32);
   const rankOf = (eid:string) => {
     const g = groups.find(x=>x.entrantId===eid)?.group || '?';
-    const arr = grouped[g]||[]; const pos = arr.findIndex(z=>z.entrantId===eid);
+    const arr:any[] = grouped[g]||[]; const pos = arr.findIndex((z:any)=>z.entrantId===eid);
     return pos>=0?pos+1:99;
   };
   const sorted = [...qualifiers].sort((a,b)=> rankOf(a)-rankOf(b));
