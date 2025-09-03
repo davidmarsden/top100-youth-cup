@@ -1,7 +1,10 @@
 import './globals.css';
 import React from 'react';
 
-export const metadata = { title: 'Top 100 Youth Cup — S26', description: 'Registration, Groups, Fixtures, Tables, Knockout' };
+export const metadata = {
+  title: 'Top 100 Youth Cup — S26',
+  description: 'Registration, Groups, Fixtures, Tables, Knockout'
+};
 
 export default function RootLayout({ children }:{children: React.ReactNode}){
   return (
