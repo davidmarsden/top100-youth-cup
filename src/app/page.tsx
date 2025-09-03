@@ -67,6 +67,7 @@ export default function AppPage(){
         <div className="flex gap-2">
           <button className="btn" onClick={exportJSON}>Export JSON</button>
           <a className="btn" href="/register">Registration</a>
+          <a className="btn" href="/prize-draw">Prize Draw</a>
         </div>
         <div className="text-sm opacity-80">Timezone: {settings.timezone}</div>
       </div>
@@ -218,7 +219,7 @@ export default function AppPage(){
         </section>
       )}
 
-      {tab==='"Admin Notes"' && (
+      {tab==='Admin Notes' && (
         <section className="card"><p>Admin notes…</p></section>
       )}
     </div>
