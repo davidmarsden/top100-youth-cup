@@ -6,7 +6,7 @@ import { AdminGateProvider, AdminBadge } from '@/components/AdminGate';
 import StorageBadge from '@/components/StorageBadge'; // if you have one; otherwise remove
 
 export const metadata = {
-  title: 'Top 100 Youth Cup — S26',
+  title: 'Top 100 Youth Cup — {SEASON}',
   description: 'Registration, Groups, Fixtures, Tables, Knockout',
 };
 
