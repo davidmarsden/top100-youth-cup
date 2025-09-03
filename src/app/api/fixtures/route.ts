@@ -2,6 +2,28 @@ import { NextRequest, NextResponse } from 'next/server';
 import { supabase } from '@/server/supabase';
 import { isAdminRequest } from '@/server/admin';
 
+// example mapper inside /api/fixtures/route.ts
+function toCamelRow(r: any): Fixture {
+  return {
+    id: r.id,
+    season: r.season,
+    stage: r.stage,
+    round: r.round,
+    round_label: r.round_label ?? null,
+    stage_label: r.stage_label ?? null,
+    group: r.group ?? null,
+    scheduled_at: r.scheduled_at ?? null,
+    homeId: r.home_id ?? null,
+    awayId: r.away_id ?? null,
+    homeGoals: r.home_goals ?? null,
+    awayGoals: r.away_goals ?? null,
+    status: r.status ?? 'scheduled',
+    notes: r.notes ?? null,
+    double_leg: r.double_leg ?? null,
+    leg: r.leg ?? null,
+  };
+}
+
 export async function GET(req: NextRequest) {
   if (!supabase) return NextResponse.json({ fixtures: [] });
   const { searchParams } = new URL(req.url);
