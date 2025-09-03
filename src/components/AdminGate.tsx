@@ -1,37 +1,65 @@
 'use client';
-import React, { useEffect, useState } from 'react';
 
-export function useAdmin() {
+import React, { createContext, useContext, useEffect, useState } from 'react';
+
+type Ctx = { admin: boolean; refresh: () => void };
+const AdminCtx = createContext<Ctx>({ admin: false, refresh: () => {} });
+
+export function AdminGateProvider({ children }: { children: React.ReactNode }) {
   const [admin, setAdmin] = useState(false);
-  useEffect(()=>{
-    const v = typeof window !== 'undefined' ? window.localStorage.getItem('yc:admin') : null;
-    setAdmin(v === '1');
-  }, []);
-  const enable = (k: string) => {
-    if (k === (process.env.NEXT_PUBLIC_ADMIN_KEY || '')) {
-      setAdmin(true);
-      if (typeof window !== 'undefined') window.localStorage.setItem('yc:admin','1');
-      alert('Admin mode enabled');
-    } else {
-      alert('Wrong key');
-    }
+
+  const refresh = () => {
+    fetch('/api/admin/me')
+      .then(r => r.json())
+      .then(d => setAdmin(!!d.admin))
+      .catch(() => setAdmin(false));
   };
-  const disable = () => {
-    setAdmin(false);
-    if (typeof window !== 'undefined') window.localStorage.removeItem('yc:admin');
-  };
-  return { admin, enable, disable };
+
+  useEffect(() => { refresh(); }, []);
+
+  return <AdminCtx.Provider value={{ admin, refresh }}>{children}</AdminCtx.Provider>;
 }
 
-export default function AdminGate() {
-  const { admin, enable, disable } = useAdmin();
-  const [key, setKey] = useState('');
-  if (admin) return <button className="btn" onClick={disable}>Admin: ON (click to disable)</button>;
+export function useAdmin() {
+  return useContext(AdminCtx);
+}
+
+export function AdminBadge() {
+  const { admin, refresh } = useAdmin();
+
+  async function login() {
+    const pass = prompt('Enter admin passcode:');
+    if (!pass) return;
+    const r = await fetch('/api/admin/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pass }),
+    });
+    if (r.ok) {
+      alert('Admin mode enabled.');
+      refresh();
+    } else {
+      const { error } = await r.json().catch(() => ({ error: 'Login failed' }));
+      alert(error || 'Login failed');
+    }
+  }
+
+  async function logout() {
+    await fetch('/api/admin/logout', { method: 'POST' });
+    alert('Admin mode disabled.');
+    refresh();
+  }
+
   return (
-    <div className="flex gap-2">
-      <input className="px-2 py-1 rounded bg-white/10 border border-white/20" placeholder="Admin key"
-        value={key} onChange={e=>setKey(e.target.value)} />
-      <button className="btn" onClick={()=>enable(key)}>Enable Admin</button>
+    <div className="flex items-center gap-2">
+      <span className={`px-2 py-1 rounded-xl text-sm ${admin ? 'bg-emerald-600/80' : 'bg-zinc-600/60'}`}>
+        {admin ? 'Admin: on' : 'Admin: off'}
+      </span>
+      {admin ? (
+        <button className="btn" onClick={logout}>Sign out</button>
+      ) : (
+        <button className="btn bg-white text-black" onClick={login}>Admin sign in</button>
+      )}
     </div>
   );
 }
