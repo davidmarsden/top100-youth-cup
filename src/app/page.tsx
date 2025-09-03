@@ -111,7 +111,8 @@ export default function AppPage() {
     [standings]
   );
 
-  const ko = useMemo(() => computeKO32(standings, groups, settings), [standings, groups, settings]);
+  // NOTE: computeKO32 currently returns { slots: string[]; seededPairs: [string,string][] }
+  const ko = useMemo(() => computeKO32(standings, groups, settings) as unknown, [standings, groups, settings]);
 
   // ---------- ACTIONS (Admin) ----------
   const addEntrant = async () => {
@@ -383,13 +384,18 @@ export default function AppPage() {
   };
 
   const renderKO = () => {
-    if (!ko || !ko.pairs || !ko.pairs.length) return <p>No KO bracket yet.</p>;
+    // ko may be: { slots: string[]; seededPairs: [string,string][] } or something similar
+    const k: any = ko;
+    const pairs: [string, string][] = Array.isArray(k?.seededPairs) ? k.seededPairs : (Array.isArray(k?.pairs) ? k.pairs : []);
+
+    if (!pairs.length) return <p>No KO bracket yet.</p>;
+
     return (
       <SectionCard title="Youth Cup — Round of 32 (seeded)">
         <ul className="space-y-1">
-          {ko.pairs.map((p, i) => {
-            const a = entrants.find((e) => e.id === p[0]);
-            const b = entrants.find((e) => e.id === p[1]);
+          {pairs.map(([aId, bId], i) => {
+            const a = entrants.find((e) => e.id === aId);
+            const b = entrants.find((e) => e.id === bId);
             return (
               <li key={i}>
                 {a?.club ?? 'TBD'} vs {b?.club ?? 'TBD'}
