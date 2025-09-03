@@ -8,6 +8,7 @@ const items = [
   { href: '/register', label: 'Register' },
   { href: '/prize-draw', label: 'Prize Draw' },
   { href: '/schedule', label: 'Schedule' },
+	 { href: '/seasons', label: 'Seasons' },
 ];
 
 export default function TopNav(){
