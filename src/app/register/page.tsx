@@ -65,8 +65,5 @@ export default function RegisterPage(){
     }}>Clear entrants</button>
   </div>
 </SectionCard>
-
-        
-    </div>
   );
 }
