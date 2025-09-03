@@ -24,3 +24,8 @@ body {
   100% { transform: translateY(0); opacity: .7; }
 }
 .animate-ticker { animation: tickerSlide .6s ease-in-out infinite; }
+
+/* themes */
+.theme-green body {}
+.theme-neutral body { background: radial-gradient(circle at 30% 20%, #222, #111); }
+.theme-dark body { background: #000; color: #fff; }
