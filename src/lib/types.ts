@@ -6,6 +6,7 @@ export type Settings = {
   pointsWin: number; pointsDraw: number; pointsLoss: number;
   maxGroupSize: number;
   bestOfThirdsToFill: boolean;
+  doubleRoundRobin?: boolean; // NEW
 };
 export type GroupTeam = { entrantId: string; group: string; seed?: number };
 export type Fixture = {
