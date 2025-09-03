@@ -112,6 +112,12 @@ export default function AppPage(){
             <div><label className="block text-sm opacity-80">Max group size</label>
               <input type="number" className="w-full px-3 py-2 rounded-xl bg-white/10 border border-white/20" value={settings.maxGroupSize} onChange={e=>setSettings({...settings, maxGroupSize: Math.max(3, Number(e.target.value))})} /></div>
             <div className="flex items-end gap-2">
+<div className="flex items-center gap-2">
+  <input id="drr" type="checkbox" className="w-5 h-5"
+    checked={!!settings.doubleRoundRobin}
+    onChange={e=>setSettings({...settings, doubleRoundRobin: e.target.checked})} />
+  <label htmlFor="drr">Double round robin (home & away)</label>
+</div>
               <input id="thirds" type="checkbox" className="w-5 h-5" checked={settings.bestOfThirdsToFill} onChange={e=>setSettings({...settings, bestOfThirdsToFill:e.target.checked})} />
               <label htmlFor="thirds" className="mb-1">Allow best 3rd-placed teams to reach R32</label>
             </div>
