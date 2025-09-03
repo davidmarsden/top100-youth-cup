@@ -293,4 +293,3 @@ export function computeKO32(
 
   return { seededPairs: pairs };
 }
-```0
