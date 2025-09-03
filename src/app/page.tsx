@@ -15,14 +15,13 @@ export default function AppPage(){
   const [fixtures, setFixtures] = useState<Fixture[]>(()=>load('yc:fixtures', []));
 	 const [adminNotes, setAdminNotes] = useState<string>(()=>load('yc:adminNotes', ''));
 
-useEffect(()=>save('yc:adminNotes', adminNotes), [adminNotes]);
-
   const [tab, setTab] = useState('Entrants');
 
   useEffect(()=>save('yc:settings', settings), [settings]);
   useEffect(()=>save('yc:entrants', entrants), [entrants]);
   useEffect(()=>save('yc:groups', groups), [groups]);
   useEffect(()=>save('yc:fixtures', fixtures), [fixtures]);
+	 useEffect(()=>save('yc:adminNotes', adminNotes), [adminNotes]);
 
   const entrantsById = useMemo(()=>Object.fromEntries(entrants.map(e=>[e.id, e])), [entrants]);
   const standings = useMemo(()=>computeStandings(fixtures, settings, entrants, groups), [fixtures, settings, entrants, groups]);
