@@ -1,147 +1,148 @@
 'use client';
 
 import React, { useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import SectionCard from '@/components/SectionCard';
 import { useAdmin } from '@/components/AdminGate';
-import { useSeason } from '@/components/SeasonProvider';
-import { isSupabase } from '@/lib/mode';
-import { useSearchParams } from 'next/navigation';
+import { Fixture, Entrant } from '@/lib/types';
 
-export const dynamic = 'force-dynamic'; // render on request, not at build
-export const revalidate = false;        // MUST be a number or false
-export const fetchCache = 'force-no-store';
+// --- IMPORTANT: keep these as primitives only ---
+export const dynamic = 'force-dynamic';      // no static HTML for this page
+export const revalidate = false;             // disable ISR on this route
+export const fetchCache = 'force-no-store';  // (extra safety for Next 14)
 
-type Fx = {
-  id: string;
-  season_id?: string;
-  stage?: 'groups' | 'youth_cup' | 'youth_shield' | string;
-  round?: number;
-  round_label?: string;
-  leg?: 'single' | 'first' | 'second' | string;
-  group_code?: string | null;
-  home_entrant_id?: string | null;
-  away_entrant_id?: string | null;
-  homeId?: string | null;
-  awayId?: string | null;
-  scheduled_at?: string | null;
-  status?: string;
-  home_score?: number | null;
-  away_score?: number | null;
-};
+type Fx = Fixture;
 
-type Entrant = {
-  id: string;
-  manager: string;
-  club: string;
-  rating?: number;
-};
+// Helpers
+const fmt = (iso?: string) =>
+  iso ? new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) : '—';
 
-export default function FixturesPublic() {
+export default function FixturesPage() {
   const { admin } = useAdmin();
-  const SEASON_DEFAULT = useSeason();
-  const search = useSearchParams();
+  const sp = useSearchParams();
 
-  const seasonFromUrl = search.get('season') || undefined;
-  const initialSeason = seasonFromUrl ?? SEASON_DEFAULT;
-  const [season] = useState<string>(() => initialSeason);
-
+  // NEVER pass undefined to useState when generic is string – default to empty string
+  const [season, setSeason] = useState<string>(sp.get('season') ?? '');
   const [entrants, setEntrants] = useState<Entrant[]>([]);
   const [fixtures, setFixtures] = useState<Fx[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
 
+  // Load data (from Supabase via API routes)
   useEffect(() => {
-    let cancelled = false;
+    let alive = true;
     (async () => {
       try {
         setLoading(true);
-        setError(null);
-
-        if (isSupabase) {
-          const [eRes, fRes] = await Promise.all([
-            fetch(`/api/entrants?season=${encodeURIComponent(season)}`, { cache: 'no-store' }),
-            fetch(`/api/fixtures?season=${encodeURIComponent(season)}`, { cache: 'no-store' }),
-          ]);
-          if (!eRes.ok) throw new Error(`Entrants ${eRes.status}`);
-          if (!fRes.ok) throw new Error(`Fixtures ${fRes.status}`);
-
-          const eJson = await eRes.json();
-          const fJson = await fRes.json();
-          if (cancelled) return;
-
-          setEntrants(Array.isArray(eJson.entrants) ? eJson.entrants : []);
-          setFixtures(Array.isArray(fJson.fixtures) ? fJson.fixtures : []);
-        } else {
-          const eLocal = typeof window !== 'undefined' ? window.localStorage.getItem('yc:entrants') : null;
-          const fLocal = typeof window !== 'undefined' ? window.localStorage.getItem('yc:fixtures') : null;
-          if (cancelled) return;
-          setEntrants(eLocal ? JSON.parse(eLocal) : []);
-          setFixtures(fLocal ? JSON.parse(fLocal) : []);
-        }
-      } catch (e: any) {
-        if (!cancelled) setError(e?.message || 'Failed to load fixtures');
+        const qs = season ? `?season=${encodeURIComponent(season)}` : '';
+        const [eRes, fRes] = await Promise.all([
+          fetch(`/api/entrants${qs}`, { cache: 'no-store' }),
+          fetch(`/api/fixtures${qs}`, { cache: 'no-store' }),
+        ]);
+        const eJson = await eRes.json();
+        const fJson = await fRes.json();
+        if (!alive) return;
+        setEntrants(eJson?.items ?? []);
+        setFixtures(fJson?.items ?? []);
       } finally {
-        if (!cancelled) setLoading(false);
+        if (alive) setLoading(false);
       }
     })();
-    return () => { cancelled = true; };
+    return () => {
+      alive = false;
+    };
   }, [season]);
 
-  const entrantsById = useMemo(() => {
-    const m = new Map<string, Entrant>();
-    for (const e of entrants) m.set(e.id, e);
-    return m;
-  }, [entrants]);
-
   const byRound = useMemo(() => {
-    const map = new Map<string, Fx[]>();
-    for (const f of fixtures) {
-      const label = f.round_label || (f.round != null ? `Round ${f.round}` : 'Unlabeled');
-      if (!map.has(label)) map.set(label, []);
-      map.get(label)!.push(f);
+    const map: Record<string, Fx[]> = {};
+    for (const fx of fixtures) {
+      const key =
+        fx.stage === 'groups'
+          ? `Group ${fx.group_label ?? fx.group ?? ''} — R${fx.round}`
+          : `${fx.stage_label ?? fx.stage} ${fx.round_label ?? ''}`.trim();
+      if (!map[key]) map[key] = [];
+      map[key].push(fx);
     }
-    return Array.from(map.entries()).sort(([a], [b]) => a.localeCompare(b));
+    // stable sort by scheduled date then id
+    for (const k of Object.keys(map)) {
+      map[k].sort((a, b) => (a.scheduled_at || '').localeCompare(b.scheduled_at || '') || a.id.localeCompare(b.id));
+    }
+    return map;
   }, [fixtures]);
 
-  return (
-    <div className="space-y-4">
-      <SectionCard title={`Fixtures — ${season}`}>
-        {loading && <p>Loading…</p>}
-        {error && <p className="text-red-400">Error: {error}</p>}
-        {!loading && !error && !fixtures.length && <p>No fixtures yet.</p>}
+  const managerOf = (id?: string) => entrants.find(e => e.id === id)?.manager ?? 'TBC';
+  const clubOf = (id?: string) => entrants.find(e => e.id === id)?.club ?? 'TBC';
 
-        {!loading && !error && fixtures.length > 0 && (
-          <div className="space-y-4">
-            {byRound.map(([label, list]) => (
-              <div key={label} className="rounded-xl bg-white/5 border border-white/10 p-3">
-                <h3 className="font-semibold mb-2">{label}</h3>
-                <ul className="space-y-1">
-                  {list.map((f) => {
-                    const h = entrantsById.get(f.homeId || f.home_entrant_id || '');
-                    const a = entrantsById.get(f.awayId || f.away_entrant_id || '');
-                    const when = f.scheduled_at ? new Date(f.scheduled_at).toLocaleString() : 'Unscheduled';
-                    const score =
-                      f.home_score != null && f.away_score != null
-                        ? ` — ${f.home_score}-${f.away_score}${f.status ? ` (${f.status})` : ''}`
-                        : '';
-                    return (
-                      <li key={f.id}>
-                        {h?.club ?? 'TBD'} vs {a?.club ?? 'TBD'} @ {when}{score}
-                      </li>
-                    );
-                  })}
-                </ul>
+  return (
+    <div className="grid lg:grid-cols-3 gap-4">
+      <SectionCard title="Filters">
+        <div className="space-y-2">
+          <label className="block text-sm opacity-80">Season code</label>
+          <input
+            value={season}
+            onChange={(e) => setSeason(e.target.value)}
+            placeholder="e.g., S26"
+            className="w-full px-3 py-2 rounded-xl bg-white/10 border border-white/20"
+          />
+          <p className="text-xs opacity-70">
+            Leave blank to show current season (as configured on the server).
+          </p>
+          <p className="text-xs opacity-70">
+            Mode: <span className="font-semibold">{admin ? 'Admin' : 'Viewer'}</span>
+          </p>
+        </div>
+      </SectionCard>
+
+      <SectionCard title="Fixtures">
+        {loading && <p className="opacity-70">Loading…</p>}
+        {!loading && fixtures.length === 0 && <p className="opacity-70">No fixtures found.</p>}
+
+        {!loading && fixtures.length > 0 && (
+          <div className="space-y-6">
+            {Object.entries(byRound).map(([roundLabel, rows]) => (
+              <div key={roundLabel}>
+                <h3 className="font-semibold mb-2">{roundLabel}</h3>
+                <table className="table w-full">
+                  <thead>
+                    <tr className="text-left opacity-80">
+                      <th className="py-1">Kick-off</th>
+                      <th className="py-1">Home</th>
+                      <th className="py-1"></th>
+                      <th className="py-1">Away</th>
+                      <th className="py-1 text-right">Score</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rows.map((fx) => (
+                      <tr key={fx.id} className="border-t border-white/10">
+                        <td className="py-1 pr-2">{fmt(fx.scheduled_at)}</td>
+                        <td className="py-1 pr-2">
+                          <div className="text-sm font-medium">{clubOf(fx.home_id)}</div>
+                          <div className="text-xs opacity-70">{managerOf(fx.home_id)}</div>
+                        </td>
+                        <td className="py-1 pr-2 text-center">vs</td>
+                        <td className="py-1 pr-2">
+                          <div className="text-sm font-medium">{clubOf(fx.away_id)}</div>
+                          <div className="text-xs opacity-70">{managerOf(fx.away_id)}</div>
+                        </td>
+                        <td className="py-1 text-right">
+                          {fx.home_goals ?? '–'} : {fx.away_goals ?? '–'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             ))}
           </div>
         )}
       </SectionCard>
 
-      {!isSupabase && (
-        <p className="text-xs opacity-70">
-          Using local storage fallback. Configure Supabase to share fixtures with everyone.
-        </p>
-      )}
+      <SectionCard title="Notes">
+        <ul className="list-disc pl-5 text-sm space-y-2 opacity-80">
+          <li>This page is <strong>force-dynamic</strong> and <strong>no-store</strong>; it never prerenders.</li>
+          <li>If you still see the revalidate error, search your repo for <code>export const revalidate</code> within <code>/src/app/fixtures</code> and ensure it’s only set to <code>false</code> (not an object).</li>
+        </ul>
+      </SectionCard>
     </div>
   );
 }
