@@ -6,13 +6,12 @@ type Season = { id: string; code: string; age_cutoff?: string; timezone?: string
 
 type Ctx = {
   code: string;                // e.g., "S26"
-  season: Season | null;       // full row if you need more fields
+  season: Season | null;       // full row if needed
   refresh: () => void;         // refetch
   loading: boolean;
   error: string | null;
 };
 
-// default shows a sensible placeholder (so pages render immediately)
 const SeasonCtx = createContext<Ctx>({
   code: 'S26',
   season: null,
@@ -49,15 +48,19 @@ export function SeasonProvider({ children }: { children: React.ReactNode }) {
     fetchSeason();
   }, []);
 
-  const value: Ctx = {
-    code: season?.code ?? 'S26',
-    season,
-    refresh: fetchSeason,
-    loading,
-    error,
-  };
-
-  return <SeasonCtx.Provider value={value}>{children}</SeasonCtx.Provider>;
+  return (
+    <SeasonCtx.Provider
+      value={{
+        code: season?.code ?? 'S26',
+        season,
+        refresh: fetchSeason,
+        loading,
+        error,
+      }}
+    >
+      {children}
+    </SeasonCtx.Provider>
+  );
 }
 
 export function useSeason(): string {
