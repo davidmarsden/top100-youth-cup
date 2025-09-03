@@ -134,13 +134,13 @@ export default function FixturesPage() {
                       <tr key={fx.id} className="border-t border-white/10">
                         <td className="py-1 pr-2">{fmt(fx.scheduled_at ?? null)}</td>
                         <td className="py-1 pr-2">
-                          <div className="text-sm font-medium">{clubOf(fx.home_id)}</div>
-                          <div className="text-xs opacity-70">{managerOf(fx.home_id)}</div>
+                          <div className="text-sm font-medium">{clubOf(fx.homeId)}</div>
+                          <div className="text-xs opacity-70">{managerOf(fx.homeId)}</div>
                         </td>
                         <td className="py-1 pr-2 text-center">vs</td>
                         <td className="py-1 pr-2">
-                          <div className="text-sm font-medium">{clubOf(fx.away_id)}</div>
-                          <div className="text-xs opacity-70">{managerOf(fx.away_id)}</div>
+                          <div className="text-sm font-medium">{clubOf(fx.awayId)}</div>
+                          <div className="text-xs opacity-70">{managerOf(fx.awayId)}</div>
                         </td>
                         <td className="py-1 text-right">
                           {fx.home_goals ?? '–'} : {fx.away_goals ?? '–'}
@@ -157,8 +157,9 @@ export default function FixturesPage() {
 
       <SectionCard title="Notes">
         <ul className="list-disc pl-5 text-sm space-y-2 opacity-80">
+          <li>Using <code>homeId</code>/<code>awayId</code> to match your <code>Fixture</code> type.</li>
           <li>This page is <strong>force-dynamic</strong> and <strong>no-store</strong> to avoid prerendering.</li>
-          <li>IDs from Supabase can be <code>null</code>; helpers now guard for that.</li>
+          <li>IDs from Supabase can be <code>null</code>; helpers guard for that.</li>
         </ul>
       </SectionCard>
     </div>
