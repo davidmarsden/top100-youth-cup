@@ -44,20 +44,14 @@ export default function AppPage() {
   }, [entrants]);
 
   // GROUPS + FIXTURES
-  const [groups, setGroups] = useState<GroupTeam[]>(() =>
-    load<GroupTeam[]>('yc:groups', [])
-  );
+  const [groups, setGroups] = useState<GroupTeam[]>(() => load<GroupTeam[]>('yc:groups', []));
   useEffect(() => save('yc:groups', groups), [groups]);
 
-  const [fixtures, setFixtures] = useState<Fixture[]>(() =>
-    load<Fixture[]>('yc:fixtures', [])
-  );
+  const [fixtures, setFixtures] = useState<Fixture[]>(() => load<Fixture[]>('yc:fixtures', []));
   useEffect(() => save('yc:fixtures', fixtures), [fixtures]);
 
   // ADMIN NOTES
-  const [adminNotes, setAdminNotes] = useState<string>(() =>
-    load<string>('yc:adminNotes', '')
-  );
+  const [adminNotes, setAdminNotes] = useState<string>(() => load<string>('yc:adminNotes', ''));
   useEffect(() => save('yc:adminNotes', adminNotes), [adminNotes]);
 
   // TABS
@@ -67,6 +61,7 @@ export default function AppPage() {
   useEffect(() => {
     if (!isSupabase) return;
     (async () => {
+      // Ensure season row
       await fetch('/api/seasons', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -76,10 +71,11 @@ export default function AppPage() {
           timezone: settings.timezone,
         }),
       });
+      // Entrants
       const res = await fetch(`/api/entrants?season=${encodeURIComponent(settings.season)}`);
       const json = await res.json();
       setEntrants(json.entrants || []);
-
+      // Fixtures
       const fxRes = await fetch(`/api/fixtures?season=${encodeURIComponent(settings.season)}`);
       const fxJson = await fxRes.json();
       if (Array.isArray(fxJson.fixtures)) setFixtures(fxJson.fixtures);
@@ -94,7 +90,7 @@ export default function AppPage() {
   const groupedStandings = useMemo(() => rankWithinGroups(standings), [standings]);
   const ko = useMemo(() => computeKO32(standings, groups, settings), [standings, groups, settings]);
 
-  // ---------- ACTIONS ----------
+  // ---------- ACTIONS (Admin) ----------
   const addEntrant = async () => {
     const manager = prompt('Manager name?');
     if (!manager) return;
@@ -142,7 +138,6 @@ export default function AppPage() {
   const clearEntrants = async () => {
     if (!confirm('Clear all entrants for this season?')) return;
     if (isSupabase) {
-      // server-side proxy (adds ADMIN_KEY)
       await fetch('/api/admin/entrants/clear', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -475,7 +470,7 @@ export default function AppPage() {
                 placeholder="Use this space for reminders, draw decisions, penalties, disputes, etc."
               />
               <p className="text-xs opacity-70 mt-2">
-                Stored {isSupabase ? 'in Supabase (wire later)' : 'locally in your browser'}.
+                Stored {isSupabase ? 'in Supabase (coming soon)' : 'locally in your browser'}.
               </p>
             </>
           ) : (
