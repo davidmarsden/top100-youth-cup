@@ -76,14 +76,16 @@ export default function AppPage(){
 
       {tab==='Entrants' && (
         <div className="grid md:grid-cols-2 gap-4">
-          <section className="card">
-            <h2 className="font-bold text-lg mb-2">Entrants ({entrants.length})</h2>
-            <EntrantsTable entrants={entrants} />
-            <div className="mt-3 flex gap-2">
-              <button className="btn bg-white text-black" onClick={addEntrant}>+ Add Entrant</button>
-              <button className="btn" onClick={importCSV}>Import CSV</button>
-            </div>
-          </section>
+          <SectionCard title="Entrants">
+  <EntrantsTable entrants={entrants} onClear={()=>{
+    if (!confirm('Clear all entrants? This cannot be undone.')) return;
+    setEntrants([]);
+    // also clear local storage
+    if (typeof window !== 'undefined') window.localStorage.removeItem('yc:entrants');
+    alert('Entrants cleared.');
+  }} />
+  ...
+</SectionCard>
           <section className="card">
             <h2 className="font-bold text-lg mb-2">Draw Groups</h2>
             <p className="opacity-90 mb-3">We’ll auto-calc the number of groups from max size of {settings.maxGroupSize}.</p>
