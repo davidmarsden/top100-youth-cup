@@ -2,7 +2,7 @@ import { Settings, Entrant } from './types';
 import { uid } from './utils';
 
 export const defaultSettings: Settings = {
-  season: 'S26',
+  season: useSeason(),
   ageCutoffISO: new Date().toISOString().slice(0,10),
   timezone: 'Europe/London',
   pointsWin: 3, pointsDraw: 1, pointsLoss: 0,
