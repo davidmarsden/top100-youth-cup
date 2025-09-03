@@ -7,7 +7,10 @@ import { useSeason } from '@/components/SeasonProvider';
 import { isSupabase } from '@/lib/mode';
 import { useSearchParams } from 'next/navigation';
 
-// Keep this in sync with your lib/types if you have one exported
+export const dynamic = 'force-dynamic';   // ⬅ prevent static prerender
+export const revalidate = 0;              // ⬅ no cache for this page
+
+// Match your lib/types minimal shapes
 type Fx = {
   id: string;
   season_id?: string;
@@ -38,19 +41,16 @@ export default function FixturesPublic() {
   const SEASON_DEFAULT = useSeason();
   const search = useSearchParams();
 
-  // Optional URL override (?season=S27). Ensure we always end up with a string.
+  // optional URL override (?season=S27)
   const seasonFromUrl = search.get('season') || undefined;
   const initialSeason = seasonFromUrl ?? SEASON_DEFAULT;
-
-  // ✅ never undefined
-  const [season] = useState<string>(() => initialSeason);
+  const [season] = useState<string>(() => initialSeason); // never undefined
 
   const [entrants, setEntrants] = useState<Entrant[]>([]);
   const [fixtures, setFixtures] = useState<Fx[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Load entrants + fixtures for the chosen season
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -60,10 +60,9 @@ export default function FixturesPublic() {
 
         if (isSupabase) {
           const [eRes, fRes] = await Promise.all([
-            fetch(`/api/entrants?season=${encodeURIComponent(season)}`),
-            fetch(`/api/fixtures?season=${encodeURIComponent(season)}`),
+            fetch(`/api/entrants?season=${encodeURIComponent(season)}`, { cache: 'no-store' }),
+            fetch(`/api/fixtures?season=${encodeURIComponent(season)}`, { cache: 'no-store' }),
           ]);
-
           if (!eRes.ok) throw new Error(`Entrants ${eRes.status}`);
           if (!fRes.ok) throw new Error(`Fixtures ${fRes.status}`);
 
@@ -74,10 +73,11 @@ export default function FixturesPublic() {
           setEntrants(Array.isArray(eJson.entrants) ? eJson.entrants : []);
           setFixtures(Array.isArray(fJson.fixtures) ? fJson.fixtures : []);
         } else {
-          // local fallback
-          const eLocal = localStorage.getItem('yc:entrants');
-          const fLocal = localStorage.getItem('yc:fixtures');
+          // Local fallback (client only)
+          const eLocal = typeof window !== 'undefined' ? window.localStorage.getItem('yc:entrants') : null;
+          const fLocal = typeof window !== 'undefined' ? window.localStorage.getItem('yc:fixtures') : null;
           if (cancelled) return;
+
           setEntrants(eLocal ? JSON.parse(eLocal) : []);
           setFixtures(fLocal ? JSON.parse(fLocal) : []);
         }
@@ -87,7 +87,9 @@ export default function FixturesPublic() {
         if (!cancelled) setLoading(false);
       }
     })();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [season]);
 
   const entrantsById = useMemo(() => {
@@ -103,7 +105,6 @@ export default function FixturesPublic() {
       if (!map.has(label)) map.set(label, []);
       map.get(label)!.push(f);
     }
-    // Sort by natural order of label (basic)
     return Array.from(map.entries()).sort(([a], [b]) => a.localeCompare(b));
   }, [fixtures]);
 
@@ -130,7 +131,8 @@ export default function FixturesPublic() {
                         : '';
                     return (
                       <li key={f.id}>
-                        {h?.club ?? 'TBD'} vs {a?.club ?? 'TBD'} @ {when}{score}
+                        {h?.club ?? 'TBD'} vs {a?.club ?? 'TBD'} @ {when}
+                        {score}
                       </li>
                     );
                   })}
