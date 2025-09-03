@@ -4,12 +4,11 @@ import React, { useEffect, useMemo, useState } from 'react';
 import SectionCard from '@/components/SectionCard';
 import { useAdmin } from '@/components/AdminGate';
 import { isSupabase } from '@/lib/mode';
+import { useSeason } from '@/components/SeasonProvider';
 
 /* deterministic PRNG */
 function mulberry32(a: number) { return function () { let t = (a += 0x6d2b79f5); t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
 function hashString(str: string) { let h = 2166136261 >>> 0; for (let i = 0; i < str.length; i++) h = Math.imul(h ^ str.charCodeAt(i), 16777619); return h >>> 0; }
-
-const SEASON = useSeason(); // or pull from settings if you store it globally
 
 type DrawState = {
   season: string;
@@ -23,27 +22,29 @@ const LS_KEY = (s: string) => `yc:prize:${s}`;
 
 export default function PrizeDrawPage() {
   const { admin } = useAdmin();
+  const SEASON = useSeason();
 
   // page-local inputs
-  const [seed, setSeed] = useState(() => `${SEASON}-${new Date().toISOString().slice(0, 10)}`);
+  const [seed, setSeed] = useState(() => `${new Date().toISOString().slice(0, 10)}`);
   const [raw, setRaw] = useState('');
 
   // persisted state (from DB or localStorage)
   const [persisted, setPersisted] = useState<DrawState | null>(null);
 
-  // Load persisted draw on mount
+  // Load persisted draw on mount or when season changes
   useEffect(() => {
     (async () => {
       if (isSupabase) {
         const r = await fetch(`/api/prize-draw?season=${encodeURIComponent(SEASON)}`);
         const { draw } = await r.json();
         if (draw) setPersisted(draw);
+        else setPersisted(null);
       } else {
         const s = localStorage.getItem(LS_KEY(SEASON));
-        if (s) setPersisted(JSON.parse(s));
+        setPersisted(s ? JSON.parse(s) : null);
       }
     })();
-  }, []);
+  }, [SEASON]);
 
   // Canonicalize user paste
   const canonicalFromInput = useMemo(() => {
@@ -62,13 +63,13 @@ export default function PrizeDrawPage() {
     if (persisted?.full_order?.length) return persisted.full_order;
     const arr = [...canonicalFromInput];
     if (!arr.length) return arr;
-    const rnd = mulberry32(hashString(seed));
+    const rnd = mulberry32(hashString(`${SEASON}:${seed}`));
     for (let i = arr.length - 1; i > 0; i--) {
       const j = Math.floor(rnd() * (i + 1));
       [arr[i], arr[j]] = [arr[j], arr[i]];
     }
     return arr;
-  }, [persisted?.full_order, canonicalFromInput, seed]);
+  }, [persisted?.full_order, canonicalFromInput, seed, SEASON]);
 
   const revealedCount = persisted?.revealed ?? 0;
   const revealedWinners = fullOrder.slice(0, Math.min(3, revealedCount));
@@ -93,7 +94,6 @@ export default function PrizeDrawPage() {
     if (!admin) return alert('Admin only.');
     if (fullOrder.length < 3) return alert('Need at least 3 eligible managers.');
 
-    // Save initial full draw (revealed=0) so everyone can see order immediately
     const initial: DrawState = {
       season: SEASON,
       seed,
@@ -104,9 +104,7 @@ export default function PrizeDrawPage() {
     await persist(initial);
 
     setRunning(true);
-    // reveal first 3 one-by-one and persist each step
     for (let i = 1; i <= 3; i++) {
-      // pause for theatre
       // biome-ignore lint/suspicious/noAwaitInLoop
       await new Promise(r => setTimeout(r, 900));
       await persist({ ...initial, revealed: i });
@@ -130,7 +128,7 @@ export default function PrizeDrawPage() {
 
   return (
     <div className="grid md:grid-cols-2 gap-4">
-      <SectionCard title="Prize Draw — Input">
+      <SectionCard title={`Prize Draw — ${SEASON}`}>
         {!admin && (
           <p className="mb-3 text-sm opacity-80">
             Viewer mode. You can see the latest results and full order below.
@@ -145,7 +143,7 @@ export default function PrizeDrawPage() {
           disabled={inputDisabled || !!persisted}
         />
         <p className="text-xs opacity-70 mb-2">
-          Tip: include Season + ISO date/time (e.g., <code>{SEASON}-2025-09-05T21:00Z</code>).
+          Tip: include ISO date/time (e.g., <code>{SEASON}-2025-09-05T21:00Z</code>).
         </p>
 
         <label className="block text-sm opacity-80 mb-1">Eligible names (one per line)</label>
@@ -172,7 +170,6 @@ export default function PrizeDrawPage() {
                 className="btn bg-white text-black"
                 onClick={startDraw}
                 disabled={actionDisabled}
-                title={!admin ? 'Admin only' : undefined}
               >
                 🎲 Start Draw
               </button>
@@ -180,7 +177,7 @@ export default function PrizeDrawPage() {
                 <button
                   className="btn border-red-400 hover:bg-red-400/20"
                   onClick={async () => {
-                    if (!confirm('Reset this season’s prize draw?')) return;
+                    if (!confirm(`Reset ${SEASON} prize draw?`)) return;
                     if (isSupabase) await fetch('/api/prize-draw', {
                       method: 'POST',
                       headers: { 'Content-Type': 'application/json' },
