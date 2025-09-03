@@ -26,6 +26,23 @@ function uid() {
   return (crypto as any)?.randomUUID?.() || Math.random().toString(36).slice(2);
 }
 
+/** Helpers to be resilient to small type-name differences */
+function winsOf(s: any) { return s.won ?? s.w ?? 0; }
+function drawsOf(s: any) { return s.drawn ?? s.d ?? 0; }
+function lossesOf(s: any) { return s.lost ?? s.l ?? 0; }
+function playedOf(s: any) {
+  if (s.played != null) return s.played;
+  const w = winsOf(s), d = drawsOf(s), l = lossesOf(s);
+  return w + d + l;
+}
+function gfOf(s: any) { return s.gf ?? s.goalsFor ?? 0; }
+function gaOf(s: any) { return s.ga ?? s.goalsAgainst ?? 0; }
+function pointsOf(s: any) {
+  if (s.points != null) return s.points;
+  if (s.pts != null) return s.pts;
+  return winsOf(s) * 3 + drawsOf(s);
+}
+
 export default function AppPage() {
   const { admin } = useAdmin();
 
@@ -88,7 +105,7 @@ export default function AppPage() {
     [fixtures, settings, entrants, groups]
   );
 
-  // NOTE: rankWithinGroups might return either Standing[] or Record<string, Standing[]>
+  // rankWithinGroups might return either Standing[] or Record<string, Standing[]>
   const groupedStandings = useMemo(
     () => rankWithinGroups(standings) as unknown,
     [standings]
@@ -346,14 +363,14 @@ export default function AppPage() {
                     return (
                       <tr key={s.entrantId} className="border-t border-white/10">
                         <td className="py-1 pr-2">{e?.club ?? s.entrantId}</td>
-                        <td className="py-1 text-right">{s.played}</td>
-                        <td className="py-1 text-right">{s.won}</td>
-                        <td className="py-1 text-right">{s.drawn}</td>
-                        <td className="py-1 text-right">{s.lost}</td>
-                        <td className="py-1 text-right">{s.gf}</td>
-                        <td className="py-1 text-right">{s.ga}</td>
-                        <td className="py-1 text-right">{s.gf - s.ga}</td>
-                        <td className="py-1 text-right font-semibold">{s.points}</td>
+                        <td className="py-1 text-right">{playedOf(s)}</td>
+                        <td className="py-1 text-right">{winsOf(s)}</td>
+                        <td className="py-1 text-right">{drawsOf(s)}</td>
+                        <td className="py-1 text-right">{lossesOf(s)}</td>
+                        <td className="py-1 text-right">{gfOf(s)}</td>
+                        <td className="py-1 text-right">{gaOf(s)}</td>
+                        <td className="py-1 text-right">{gfOf(s) - gaOf(s)}</td>
+                        <td className="py-1 text-right font-semibold">{pointsOf(s)}</td>
                       </tr>
                     );
                   })}
