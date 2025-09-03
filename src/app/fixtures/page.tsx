@@ -7,8 +7,8 @@ import { useSeason } from '@/components/SeasonProvider';
 import { isSupabase } from '@/lib/mode';
 import { useSearchParams } from 'next/navigation';
 
-export const dynamic = 'force-dynamic';  // prevent SSG for this page
-export const revalidate = false;         // must be a number or false (NOT an object)
+export const dynamic = 'force-dynamic'; // render on request, not at build
+export const revalidate = false;        // MUST be a number or false
 export const fetchCache = 'force-no-store';
 
 type Fx = {
