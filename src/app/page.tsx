@@ -7,6 +7,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import SectionCard from '@/components/SectionCard';
 import Tabs from '@/components/Tabs';
 import EntrantsTable from '@/components/Entrants';
+import { useAdmin } from '@/components/AdminGate';
 
 // Lib
 import { defaultSettings } from '@/lib/defaults';
@@ -22,11 +23,12 @@ import {
 import { isSupabase } from '@/lib/mode';
 
 function uid() {
-  // fallback for environments without crypto.randomUUID
   return (crypto as any)?.randomUUID?.() || Math.random().toString(36).slice(2);
 }
 
 export default function AppPage() {
+  const { admin } = useAdmin();
+
   // SETTINGS
   const [settings, setSettings] = useState<Settings>(() =>
     load<Settings>('yc:settings', defaultSettings)
@@ -80,6 +82,11 @@ export default function AppPage() {
       );
       const json = await res.json();
       setEntrants(json.entrants || []);
+
+      // (Optional) Load existing fixtures for this season into local state
+      const fxRes = await fetch(`/api/fixtures?season=${encodeURIComponent(settings.season)}`);
+      const fxJson = await fxRes.json();
+      if (Array.isArray(fxJson.fixtures)) setFixtures(fxJson.fixtures);
     })();
   }, [settings.season, settings.ageCutoffISO, settings.timezone]);
 
@@ -158,14 +165,43 @@ export default function AppPage() {
     alert('Entrants cleared for this season.');
   };
 
-  const doDraw = () => {
+  const doDraw = async () => {
     if (entrants.length < 4) {
       alert('Need at least 4 entrants to draw groups.');
       return;
     }
     const g = assignGroups(entrants, settings);
     setGroups(g);
-    setFixtures(generateGroupFixtures(g, !!settings.doubleRoundRobin));
+    const fx = generateGroupFixtures(g, !!settings.doubleRoundRobin);
+    setFixtures(fx);
+
+    // Persist fixtures in Supabase (admin-only)
+    if (isSupabase && admin) {
+      await fetch('/api/fixtures', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          // QUICK MODE: requires NEXT_PUBLIC_ADMIN_KEY to be set to the same value as ADMIN_KEY on Netlify
+          'x-admin-key': (process.env.NEXT_PUBLIC_ADMIN_KEY as string) || '',
+        },
+        body: JSON.stringify({
+          season: settings.season,
+          fixtures: fx.map(f => ({
+            id: f.id,
+            stage: 'groups',
+            round_label: `Group R${f.round}`,
+            leg: 'single',
+            homeId: (f as any).homeId ?? (f as any).home_entrant_id ?? null,
+            awayId: (f as any).awayId ?? (f as any).away_entrant_id ?? null,
+            status: 'pending',
+          })),
+        }),
+      });
+      // Refresh from DB (optional)
+      const fresh = await fetch(`/api/fixtures?season=${settings.season}`).then(r => r.json());
+      if (fresh.fixtures) setFixtures(fresh.fixtures);
+    }
+
     setTab('Groups');
   };
 
@@ -186,8 +222,14 @@ export default function AppPage() {
       const res = await fetch(`/api/entrants?season=${next}`);
       const json = await res.json();
       setEntrants(json.entrants || []);
+      const fxRes = await fetch(`/api/fixtures?season=${next}`);
+      const fxJson = await fxRes.json();
+      setFixtures(fxJson.fixtures || []);
+      setGroups([]); // groups are season-specific — reset until (re)drawn
     } else {
       setEntrants([]);
+      setGroups([]);
+      setFixtures([]);
     }
     alert(
       `Switched to season ${next}. Previous seasons remain in the database (or your local storage) as archive.`
@@ -226,7 +268,7 @@ export default function AppPage() {
   const renderFixtures = () => {
     if (!fixtures.length) return <p>No fixtures yet. Draw to generate fixtures.</p>;
     const byRound = fixtures.reduce<Record<string, Fixture[]>>((acc, fx) => {
-      (acc[fx.round_label] ||= []).push(fx);
+      (acc[(fx as any).round_label || `Group R${(fx as any).round}`] ||= []).push(fx);
       return acc;
     }, {});
     return (
@@ -234,13 +276,16 @@ export default function AppPage() {
         {Object.keys(byRound).map((label) => (
           <SectionCard key={label} title={label}>
             <ul className="space-y-1">
-              {byRound[label].map((f) => {
-                const h = entrants.find((e) => e.id === f.homeId || e.id === (f as any).home_entrant_id);
-                const a = entrants.find((e) => e.id === f.awayId || e.id === (f as any).away_entrant_id);
+              {byRound[label].map((f: any) => {
+                const h = entrants.find((e) => e.id === f.homeId || e.id === f.home_entrant_id);
+                const a = entrants.find((e) => e.id === f.awayId || e.id === f.away_entrant_id);
                 return (
                   <li key={f.id}>
                     {h?.club ?? 'TBD'} vs {a?.club ?? 'TBD'}{' '}
-                    {f.scheduled_at ? `@ ${new Date(f.scheduled_at as any).toLocaleString()}` : ''}
+                    {f.scheduled_at ? `@ ${new Date(f.scheduled_at).toLocaleString()}` : ''}
+                    {f.home_score != null && f.away_score != null
+                      ? ` — ${f.home_score}-${f.away_score} (${f.status})`
+                      : ''}
                   </li>
                 );
               })}
@@ -325,15 +370,19 @@ export default function AppPage() {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap gap-2">
-        <button className="btn bg-white text-black" onClick={addEntrant}>
-          + Add Entrant
-        </button>
-        <button className="btn" onClick={doDraw}>
-          Draw Groups
-        </button>
-        <button className="btn border-red-400 hover:bg-red-400/20" onClick={clearEntrants}>
-          Clear Entrants (Season {settings.season})
-        </button>
+        {admin && (
+          <>
+            <button className="btn bg-white text-black" onClick={addEntrant}>
+              + Add Entrant
+            </button>
+            <button className="btn" onClick={doDraw}>
+              Draw Groups (persist)
+            </button>
+            <button className="btn border-red-400 hover:bg-red-400/20" onClick={clearEntrants}>
+              Clear Entrants (Season {settings.season})
+            </button>
+          </>
+        )}
       </div>
 
       <Tabs
@@ -353,7 +402,7 @@ export default function AppPage() {
       {tab === 'Entrants' && (
         <div className="grid md:grid-cols-2 gap-4">
           <SectionCard title={`Entrants (${entrants.length}) — Season ${settings.season}`}>
-            <EntrantsTable entrants={entrants} onClear={clearEntrants} />
+            <EntrantsTable entrants={entrants} onClear={admin ? clearEntrants : undefined} />
             <p className="text-xs opacity-70 mt-2">
               {isSupabase ? 'Shared via Supabase (all viewers see the same).' : 'Local to your browser only.'}
             </p>
@@ -361,12 +410,14 @@ export default function AppPage() {
 
           <SectionCard title="Actions">
             <div className="space-y-2">
-              <button className="btn" onClick={doDraw}>
-                Draw groups now
-              </button>
-              <button className="btn" onClick={switchSeason}>
-                Switch Season
-              </button>
+              {admin ? (
+                <>
+                  <button className="btn" onClick={doDraw}>Draw groups now</button>
+                  <button className="btn" onClick={switchSeason}>Switch Season</button>
+                </>
+              ) : (
+                <p className="text-sm opacity-80">Viewing mode. Ask an admin to draw or switch season.</p>
+              )}
             </div>
           </SectionCard>
         </div>
@@ -374,49 +425,53 @@ export default function AppPage() {
 
       {tab === 'Settings' && (
         <SectionCard title="Settings">
-          <div className="grid md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm opacity-80">Season code</label>
-              <input
-                className="w-full px-3 py-2 rounded-xl bg-white/10 border border-white/20"
-                value={settings.season}
-                onChange={(e) => setSettings({ ...settings, season: e.target.value })}
-              />
-            </div>
-            <div>
-              <label className="block text-sm opacity-80">Age cutoff (YYYY-MM-DD)</label>
-              <input
-                className="w-full px-3 py-2 rounded-xl bg-white/10 border border-white/20"
-                value={settings.ageCutoffISO}
-                onChange={(e) => setSettings({ ...settings, ageCutoffISO: e.target.value })}
-              />
-            </div>
-            <div>
-              <label className="block text-sm opacity-80">Timezone</label>
-              <input
-                className="w-full px-3 py-2 rounded-xl bg-white/10 border border-white/20"
-                value={settings.timezone}
-                onChange={(e) => setSettings({ ...settings, timezone: e.target.value })}
-              />
-            </div>
-            <div className="flex items-center gap-2">
-              <input
-                id="drr"
-                type="checkbox"
-                className="w-5 h-5"
-                checked={!!settings.doubleRoundRobin}
-                onChange={(e) =>
-                  setSettings({ ...settings, doubleRoundRobin: e.target.checked })
-                }
-              />
-              <label htmlFor="drr">Double round robin (home & away)</label>
-            </div>
-          </div>
-          <div className="mt-3">
-            <button className="btn" onClick={switchSeason}>
-              Switch Season
-            </button>
-          </div>
+          {admin ? (
+            <>
+              <div className="grid md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm opacity-80">Season code</label>
+                  <input
+                    className="w-full px-3 py-2 rounded-xl bg-white/10 border border-white/20"
+                    value={settings.season}
+                    onChange={(e) => setSettings({ ...settings, season: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm opacity-80">Age cutoff (YYYY-MM-DD)</label>
+                  <input
+                    className="w-full px-3 py-2 rounded-xl bg-white/10 border border-white/20"
+                    value={settings.ageCutoffISO}
+                    onChange={(e) => setSettings({ ...settings, ageCutoffISO: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm opacity-80">Timezone</label>
+                  <input
+                    className="w-full px-3 py-2 rounded-xl bg-white/10 border border-white/20"
+                    value={settings.timezone}
+                    onChange={(e) => setSettings({ ...settings, timezone: e.target.value })}
+                  />
+                </div>
+                <div className="flex items-center gap-2">
+                  <input
+                    id="drr"
+                    type="checkbox"
+                    className="w-5 h-5"
+                    checked={!!settings.doubleRoundRobin}
+                    onChange={(e) =>
+                      setSettings({ ...settings, doubleRoundRobin: e.target.checked })
+                    }
+                  />
+                  <label htmlFor="drr">Double round robin (home & away)</label>
+                </div>
+              </div>
+              <div className="mt-3">
+                <button className="btn" onClick={switchSeason}>Switch Season</button>
+              </div>
+            </>
+          ) : (
+            <p className="text-sm opacity-80">Viewing mode. Settings are admin-only.</p>
+          )}
         </SectionCard>
       )}
 
@@ -430,15 +485,21 @@ export default function AppPage() {
 
       {tab === 'Admin Notes' && (
         <SectionCard title="Admin Notes">
-          <textarea
-            className="w-full min-h-[240px] px-3 py-2 rounded-xl bg-white/10 border border-white/20"
-            value={adminNotes}
-            onChange={(e) => setAdminNotes(e.target.value)}
-            placeholder="Use this space for reminders, draw decisions, penalties, disputes, etc."
-          />
-          <p className="text-xs opacity-70 mt-2">
-            Stored {isSupabase ? 'in Supabase' : 'locally in your browser'}.
-          </p>
+          {admin ? (
+            <>
+              <textarea
+                className="w-full min-h-[240px] px-3 py-2 rounded-xl bg-white/10 border border-white/20"
+                value={adminNotes}
+                onChange={(e) => setAdminNotes(e.target.value)}
+                placeholder="Use this space for reminders, draw decisions, penalties, disputes, etc."
+              />
+              <p className="text-xs opacity-70 mt-2">
+                Stored {isSupabase ? 'in Supabase' : 'locally in your browser'}.
+              </p>
+            </>
+          ) : (
+            <p className="text-sm opacity-80">Admin notes are not visible in viewer mode.</p>
+          )}
         </SectionCard>
       )}
     </div>
