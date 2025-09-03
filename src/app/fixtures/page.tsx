@@ -6,7 +6,7 @@ import SectionCard from '@/components/SectionCard';
 import { useAdmin } from '@/components/AdminGate';
 import { Fixture, Entrant } from '@/lib/types';
 
-// Disable prerender/ISR for this page
+// Prevent static prerender/ISR and caching for this page
 export const dynamic = 'force-dynamic';
 export const revalidate = false;
 export const fetchCache = 'force-no-store';
@@ -52,10 +52,18 @@ export default function FixturesPage() {
   const byRound = useMemo(() => {
     const map: Record<string, Fx[]> = {};
     for (const fx of fixtures) {
-      // Build a human label without using a non-existent `group` field
-      const baseStage = fx.stage_label ?? fx.stage; // e.g. "Groups" or "Quarter-final"
+      // Build a label using only fields on Fixture
+      const baseStage =
+        fx.stage === 'groups'
+          ? 'Groups'
+          : // knockout stages come across via stage (e.g., 'youth_cup', 'youth_shield')
+            fx.stage.replace('_', ' ');
+
       const baseRound =
-        fx.round_label ?? (fx.round ? `R${fx.round}` : ''); // fallback "R{n}" for groups
+        fx.stage === 'groups'
+          ? (fx.round ? `R${fx.round}` : '')
+          : (fx.round_label ?? (fx.round ? `R${fx.round}` : ''));
+
       const key = [baseStage, baseRound].filter(Boolean).join(' ').trim();
 
       if (!map[key]) map[key] = [];
