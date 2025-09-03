@@ -220,10 +220,13 @@ export default function AppPage() {
   // ---------- RENDER HELPERS ----------
   const renderGroups = () => {
     if (!groups.length) return <p>No groups yet. Draw to generate groups.</p>;
-    const byGroup = groups.reduce((acc, gt) => {
-      (acc[gt.group] ||= []).push(gt);
-      return acc;
-    }, {} as { [key: string]: GroupTeam[] });
+
+    const byGroup: { [key: string]: GroupTeam[] } = {};
+    for (const gt of groups) {
+      if (!byGroup[gt.group]) byGroup[gt.group] = [];
+      byGroup[gt.group].push(gt);
+    }
+
     return (
       <div className="grid md:grid-cols-2 gap-4">
         {Object.keys(byGroup)
@@ -248,10 +251,14 @@ export default function AppPage() {
 
   const renderFixtures = () => {
     if (!fixtures.length) return <p>No fixtures yet. Draw to generate fixtures.</p>;
-    const byRound = fixtures.reduce((acc, fx) => {
-      (acc[(fx as any).round_label || `Group R${(fx as any).round}`] ||= []).push(fx);
-      return acc;
-    }, {} as { [key: string]: Fixture[] });
+
+    const byRound: { [key: string]: Fixture[] } = {};
+    for (const fx of fixtures as any[]) {
+      const label = (fx as any).round_label || `Group R${(fx as any).round}`;
+      if (!byRound[label]) byRound[label] = [];
+      byRound[label].push(fx as Fixture);
+    }
+
     return (
       <div className="space-y-4">
         {Object.keys(byRound).map((label) => (
@@ -279,10 +286,13 @@ export default function AppPage() {
 
   const renderTables = () => {
     if (!groupedStandings.length) return <p>No tables yet.</p>;
-    const byGroup = groupedStandings.reduce((acc, s) => {
-      (acc[s.group] ||= []).push(s);
-      return acc;
-    }, {} as { [key: string]: Standing[] });
+
+    const byGroup: { [key: string]: Standing[] } = {};
+    for (const s of groupedStandings as Standing[]) {
+      if (!byGroup[s.group]) byGroup[s.group] = [];
+      byGroup[s.group].push(s);
+    }
+
     return (
       <div className="grid md:grid-cols-2 gap-4">
         {Object.keys(byGroup)
