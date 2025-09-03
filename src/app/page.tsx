@@ -8,6 +8,7 @@ import SectionCard from '@/components/SectionCard';
 import Tabs from '@/components/Tabs';
 import EntrantsTable from '@/components/Entrants';
 import { useAdmin } from '@/components/AdminGate';
+import { useSeason } from '@/components/SeasonProvider';
 
 // Lib
 import { defaultSettings } from '@/lib/defaults';
@@ -45,6 +46,7 @@ function pointsOf(s: any) {
 
 export default function AppPage() {
   const { admin } = useAdmin();
+  const SEASON = useSeason();
 
   // SETTINGS
   const [settings, setSettings] = useState<Settings>(() =>
@@ -78,26 +80,26 @@ export default function AppPage() {
   useEffect(() => {
     if (!isSupabase) return;
     (async () => {
-      // Ensure season row
+      // ensure season row (by code)
       await fetch('/api/seasons', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          code: settings.season,
+          code: SEASON,
           age_cutoff: settings.ageCutoffISO,
           timezone: settings.timezone,
         }),
       });
-      // Entrants
-      const res = await fetch(`/api/entrants?season=${encodeURIComponent(settings.season)}`);
+      // entrants
+      const res = await fetch(`/api/entrants?season=${encodeURIComponent(SEASON)}`);
       const json = await res.json();
       setEntrants(json.entrants || []);
-      // Fixtures
-      const fxRes = await fetch(`/api/fixtures?season=${encodeURIComponent(settings.season)}`);
+      // fixtures
+      const fxRes = await fetch(`/api/fixtures?season=${encodeURIComponent(SEASON)}`);
       const fxJson = await fxRes.json();
       if (Array.isArray(fxJson.fixtures)) setFixtures(fxJson.fixtures);
     })();
-  }, [settings.season, settings.ageCutoffISO, settings.timezone]);
+  }, [SEASON, settings.ageCutoffISO, settings.timezone]);
 
   // ---------- COMPUTATIONS ----------
   const standings: Standing[] = useMemo(
@@ -105,13 +107,8 @@ export default function AppPage() {
     [fixtures, settings, entrants, groups]
   );
 
-  // rankWithinGroups might return either Standing[] or Record<string, Standing[]>
-  const groupedStandings = useMemo(
-    () => rankWithinGroups(standings) as unknown,
-    [standings]
-  );
+  const groupedStandings = useMemo(() => rankWithinGroups(standings) as unknown, [standings]);
 
-  // NOTE: computeKO32 currently returns { slots: string[]; seededPairs: [string,string][] }
   const ko = useMemo(() => computeKO32(standings, groups, settings) as unknown, [standings, groups, settings]);
 
   // ---------- ACTIONS (Admin) ----------
@@ -127,54 +124,42 @@ export default function AppPage() {
       await fetch('/api/seasons', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          code: settings.season,
-          age_cutoff: settings.ageCutoffISO,
-          timezone: settings.timezone,
-        }),
+        body: JSON.stringify({ code: SEASON, age_cutoff: settings.ageCutoffISO, timezone: settings.timezone }),
       });
       await fetch('/api/entrants', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          season: settings.season,
+          season: SEASON,
           manager: manager.trim(),
           club: club.trim(),
           rating: isNaN(Number(rating)) ? undefined : rating,
         }),
       });
-      const res = await fetch(`/api/entrants?season=${settings.season}`);
+      const res = await fetch(`/api/entrants?season=${SEASON}`);
       const json = await res.json();
       setEntrants(json.entrants || []);
     } else {
-      setEntrants((e) => [
-        ...e,
-        {
-          id: uid(),
-          manager: manager.trim(),
-          club: club.trim(),
-          rating: isNaN(Number(rating)) ? undefined : rating,
-        },
-      ]);
+      setEntrants((e) => [...e, { id: uid(), manager: manager.trim(), club: club.trim(), rating: isNaN(Number(rating)) ? undefined : rating }]);
     }
   };
 
   const clearEntrants = async () => {
-    if (!confirm('Clear all entrants for this season?')) return;
+    if (!confirm(`Clear all entrants for ${SEASON}?`)) return;
     if (isSupabase) {
       await fetch('/api/admin/entrants/clear', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ season: settings.season }),
+        body: JSON.stringify({ season: SEASON }),
       });
-      const res = await fetch(`/api/entrants?season=${settings.season}`);
+      const res = await fetch(`/api/entrants?season=${SEASON}`);
       const json = await res.json();
       setEntrants(json.entrants || []);
     } else {
       setEntrants([]);
       if (typeof window !== 'undefined') window.localStorage.removeItem('yc:entrants');
     }
-    alert('Entrants cleared for this season.');
+    alert(`Entrants cleared for ${SEASON}.`);
   };
 
   const doDraw = async () => {
@@ -198,14 +183,12 @@ export default function AppPage() {
         awayId: f.awayId ?? f.away_entrant_id ?? null,
         status: 'pending',
       }));
-
       await fetch('/api/admin/fixtures/persist', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ season: settings.season, fixtures: payload }),
+        body: JSON.stringify({ season: SEASON, fixtures: payload }),
       });
-
-      const fresh = await fetch(`/api/fixtures?season=${settings.season}`).then((r) => r.json());
+      const fresh = await fetch(`/api/fixtures?season=${SEASON}`).then((r) => r.json());
       if (fresh.fixtures) setFixtures(fresh.fixtures);
     }
 
@@ -213,80 +196,49 @@ export default function AppPage() {
   };
 
   const switchSeason = async () => {
-    const next = prompt('New season code? (e.g., S27)', settings.season);
-    if (!next) return;
-    setSettings({ ...settings, season: next });
-    if (isSupabase) {
-      await fetch('/api/seasons', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          code: next,
-          age_cutoff: settings.ageCutoffISO,
-          timezone: settings.timezone,
-        }),
-      });
-      const res = await fetch(`/api/entrants?season=${next}`);
-      const json = await res.json();
-      setEntrants(json.entrants || []);
-      const fxRes = await fetch(`/api/fixtures?season=${next}`);
-      const fxJson = await fxRes.json();
-      setFixtures(fxJson.fixtures || []);
-      setGroups([]);
-    } else {
-      setEntrants([]);
-      setGroups([]);
-      setFixtures([]);
-    }
-    alert(`Switched to season ${next}. Previous seasons remain archived.`);
+    alert('Season switching is now driven by Supabase “current season”. Use the Seasons admin to change it.');
   };
 
   // ---------- RENDER HELPERS ----------
   const renderGroups = () => {
     if (!groups.length) return <p>No groups yet. Draw to generate groups.</p>;
-
     const byGroup: { [key: string]: GroupTeam[] } = {};
     for (const gt of groups) {
       if (!byGroup[gt.group]) byGroup[gt.group] = [];
       byGroup[gt.group].push(gt);
     }
-
     return (
       <div className="grid md:grid-cols-2 gap-4">
-        {Object.keys(byGroup)
-          .sort()
-          .map((g) => (
-            <SectionCard key={g} title={`Group ${g}`}>
-              <ul className="space-y-1">
-                {byGroup[g].map((m) => {
-                  const e = entrants.find((x) => x.id === m.entrantId);
-                  return (
-                    <li key={m.entrantId}>
-                      {e?.manager} — {e?.club} {e?.rating ? `(${e.rating})` : ''}
-                    </li>
-                  );
-                })}
-              </ul>
-            </SectionCard>
-          ))}
+        {Object.keys(byGroup).sort().map((g) => (
+          <SectionCard key={g} title={`Group ${g} — ${SEASON}`}>
+            <ul className="space-y-1">
+              {byGroup[g].map((m) => {
+                const e = entrants.find((x) => x.id === m.entrantId);
+                return (
+                  <li key={m.entrantId}>
+                    {e?.manager} — {e?.club} {e?.rating ? `(${e.rating})` : ''}
+                  </li>
+                );
+              })}
+            </ul>
+          </SectionCard>
+        ))}
       </div>
     );
   };
 
   const renderFixtures = () => {
     if (!fixtures.length) return <p>No fixtures yet. Draw to generate fixtures.</p>;
-
     const byRound: { [key: string]: Fixture[] } = {};
     for (const fx of fixtures as any[]) {
       const label = (fx as any).round_label || `Group R${(fx as any).round}`;
       if (!byRound[label]) byRound[label] = [];
       byRound[label].push(fx as Fixture);
     }
-
     return (
       <div className="space-y-4">
         {Object.keys(byRound).map((label) => (
-          <SectionCard key={label} title={label}>
+          <SectionCard key={label} title={`${label} — ${SEASON}`}>
             <ul className="space-y-1">
               {byRound[label].map((f: any) => {
                 const h = entrants.find((e) => e.id === f.homeId || e.id === f.home_entrant_id);
@@ -309,10 +261,7 @@ export default function AppPage() {
   };
 
   const renderTables = () => {
-    // Handle both shapes: Standing[] or Record<string, Standing[]>
     const gs: unknown = groupedStandings;
-
-    // Quick empty check
     const isEmptyArray = Array.isArray(gs) && gs.length === 0;
     const isEmptyRecord =
       !Array.isArray(gs) &&
@@ -322,7 +271,6 @@ export default function AppPage() {
 
     if (isEmptyArray || isEmptyRecord) return <p>No tables yet.</p>;
 
-    // Build byGroup map safely
     const byGroup: { [key: string]: Standing[] } = {};
     if (Array.isArray(gs)) {
       for (const s of gs as Standing[]) {
@@ -331,67 +279,60 @@ export default function AppPage() {
       }
     } else if (gs != null && typeof gs === 'object') {
       const rec = gs as Record<string, Standing[]>;
-      for (const [k, arr] of Object.entries(rec)) {
-        byGroup[k] = arr;
-      }
+      for (const [k, arr] of Object.entries(rec)) byGroup[k] = arr;
     }
 
     if (!Object.keys(byGroup).length) return <p>No tables yet.</p>;
 
     return (
       <div className="grid md:grid-cols-2 gap-4">
-        {Object.keys(byGroup)
-          .sort()
-          .map((g) => (
-            <SectionCard key={g} title={`Group ${g} Table`}>
-              <table className="table">
-                <thead>
-                  <tr className="text-left opacity-80">
-                    <th className="py-1">Club</th>
-                    <th className="py-1 text-right">P</th>
-                    <th className="py-1 text-right">W</th>
-                    <th className="py-1 text-right">D</th>
-                    <th className="py-1 text-right">L</th>
-                    <th className="py-1 text-right">GF</th>
-                    <th className="py-1 text-right">GA</th>
-                    <th className="py-1 text-right">GD</th>
-                    <th className="py-1 text-right">Pts</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {byGroup[g].map((s) => {
-                    const e = entrants.find((x) => x.id === s.entrantId);
-                    return (
-                      <tr key={s.entrantId} className="border-t border-white/10">
-                        <td className="py-1 pr-2">{e?.club ?? s.entrantId}</td>
-                        <td className="py-1 text-right">{playedOf(s)}</td>
-                        <td className="py-1 text-right">{winsOf(s)}</td>
-                        <td className="py-1 text-right">{drawsOf(s)}</td>
-                        <td className="py-1 text-right">{lossesOf(s)}</td>
-                        <td className="py-1 text-right">{gfOf(s)}</td>
-                        <td className="py-1 text-right">{gaOf(s)}</td>
-                        <td className="py-1 text-right">{gfOf(s) - gaOf(s)}</td>
-                        <td className="py-1 text-right font-semibold">{pointsOf(s)}</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </SectionCard>
-          ))}
+        {Object.keys(byGroup).sort().map((g) => (
+          <SectionCard key={g} title={`Group ${g} Table — ${SEASON}`}>
+            <table className="table">
+              <thead>
+                <tr className="text-left opacity-80">
+                  <th className="py-1">Club</th>
+                  <th className="py-1 text-right">P</th>
+                  <th className="py-1 text-right">W</th>
+                  <th className="py-1 text-right">D</th>
+                  <th className="py-1 text-right">L</th>
+                  <th className="py-1 text-right">GF</th>
+                  <th className="py-1 text-right">GA</th>
+                  <th className="py-1 text-right">GD</th>
+                  <th className="py-1 text-right">Pts</th>
+                </tr>
+              </thead>
+              <tbody>
+                {byGroup[g].map((s) => {
+                  const e = entrants.find((x) => x.id === s.entrantId);
+                  return (
+                    <tr key={s.entrantId} className="border-t border-white/10">
+                      <td className="py-1 pr-2">{e?.club ?? s.entrantId}</td>
+                      <td className="py-1 text-right">{playedOf(s)}</td>
+                      <td className="py-1 text-right">{winsOf(s)}</td>
+                      <td className="py-1 text-right">{drawsOf(s)}</td>
+                      <td className="py-1 text-right">{lossesOf(s)}</td>
+                      <td className="py-1 text-right">{gfOf(s)}</td>
+                      <td className="py-1 text-right">{gaOf(s)}</td>
+                      <td className="py-1 text-right">{gfOf(s) - gaOf(s)}</td>
+                      <td className="py-1 text-right font-semibold">{pointsOf(s)}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </SectionCard>
+        ))}
       </div>
     );
   };
 
   const renderKO = () => {
-    // ko may be: { slots: string[]; seededPairs: [string,string][] } or something similar
     const k: any = ko;
     const pairs: [string, string][] = Array.isArray(k?.seededPairs) ? k.seededPairs : (Array.isArray(k?.pairs) ? k.pairs : []);
-
     if (!pairs.length) return <p>No KO bracket yet.</p>;
-
     return (
-      <SectionCard title="Youth Cup — Round of 32 (seeded)">
+      <SectionCard title={`Youth Cup — Round of 32 (seeded) — ${SEASON}`}>
         <ul className="space-y-1">
           {pairs.map(([aId, bId], i) => {
             const a = entrants.find((e) => e.id === aId);
@@ -414,13 +355,13 @@ export default function AppPage() {
         {admin && (
           <>
             <button className="btn bg-white text-black" onClick={addEntrant}>
-              + Add Entrant
+              + Add Entrant ({SEASON})
             </button>
             <button className="btn" onClick={doDraw}>
               Draw Groups (persist)
             </button>
             <button className="btn border-red-400 hover:bg-red-400/20" onClick={clearEntrants}>
-              Clear Entrants (Season {settings.season})
+              Clear Entrants ({SEASON})
             </button>
           </>
         )}
@@ -434,7 +375,7 @@ export default function AppPage() {
 
       {tab === 'Entrants' && (
         <div className="grid md:grid-cols-2 gap-4">
-          <SectionCard title={`Entrants (${entrants.length}) — Season ${settings.season}`}>
+          <SectionCard title={`Entrants (${entrants.length}) — Season ${SEASON}`}>
             <EntrantsTable entrants={entrants} onClear={admin ? clearEntrants : undefined} />
             <p className="text-xs opacity-70 mt-2">
               {isSupabase ? 'Shared via Supabase.' : 'Local only.'}
@@ -461,56 +402,38 @@ export default function AppPage() {
       )}
 
       {tab === 'Settings' && (
-        <SectionCard title="Settings">
-          {admin ? (
-            <>
-              <div className="grid md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm opacity-80">Season code</label>
-                  <input
-                    className="w-full px-3 py-2 rounded-xl bg-white/10 border border-white/20"
-                    value={settings.season}
-                    onChange={(e) => setSettings({ ...settings, season: e.target.value })}
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm opacity-80">Age cutoff (YYYY-MM-DD)</label>
-                  <input
-                    className="w-full px-3 py-2 rounded-xl bg-white/10 border border-white/20"
-                    value={settings.ageCutoffISO}
-                    onChange={(e) => setSettings({ ...settings, ageCutoffISO: e.target.value })}
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm opacity-80">Timezone</label>
-                  <input
-                    className="w-full px-3 py-2 rounded-xl bg-white/10 border border-white/20"
-                    value={settings.timezone}
-                    onChange={(e) => setSettings({ ...settings, timezone: e.target.value })}
-                  />
-                </div>
-                <div className="flex items-center gap-2">
-                  <input
-                    id="drr"
-                    type="checkbox"
-                    className="w-5 h-5"
-                    checked={!!settings.doubleRoundRobin}
-                    onChange={(e) =>
-                      setSettings({ ...settings, doubleRoundRobin: e.target.checked })
-                    }
-                  />
-                  <label htmlFor="drr">Double round robin (home & away)</label>
-                </div>
-              </div>
-              <div className="mt-3">
-                <button className="btn" onClick={switchSeason}>
-                  Switch Season
-                </button>
-              </div>
-            </>
-          ) : (
-            <p className="text-sm opacity-80">Viewing mode only. Settings are admin-only.</p>
-          )}
+        <SectionCard title={`Settings — ${SEASON}`}>
+          <p className="text-sm opacity-80 mb-2">Season code is managed centrally; this page controls other toggles.</p>
+          <div className="grid md:grid-cols-2 gap-4">
+            <div className="flex items-center gap-2">
+              <input
+                id="drr"
+                type="checkbox"
+                className="w-5 h-5"
+                checked={!!settings.doubleRoundRobin}
+                onChange={(e) =>
+                  setSettings({ ...settings, doubleRoundRobin: e.target.checked })
+                }
+              />
+              <label htmlFor="drr">Double round robin (home & away)</label>
+            </div>
+            <div>
+              <label className="block text-sm opacity-80">Age cutoff (YYYY-MM-DD)</label>
+              <input
+                className="w-full px-3 py-2 rounded-xl bg-white/10 border border-white/20"
+                value={settings.ageCutoffISO}
+                onChange={(e) => setSettings({ ...settings, ageCutoffISO: e.target.value })}
+              />
+            </div>
+            <div>
+              <label className="block text-sm opacity-80">Timezone</label>
+              <input
+                className="w-full px-3 py-2 rounded-xl bg-white/10 border border-white/20"
+                value={settings.timezone}
+                onChange={(e) => setSettings({ ...settings, timezone: e.target.value })}
+              />
+            </div>
+          </div>
         </SectionCard>
       )}
 
@@ -520,7 +443,7 @@ export default function AppPage() {
       {tab === 'Knockout32' && renderKO()}
 
       {tab === 'Admin Notes' && (
-        <SectionCard title="Admin Notes">
+        <SectionCard title={`Admin Notes — ${SEASON}`}>
           {admin ? (
             <>
               <textarea
