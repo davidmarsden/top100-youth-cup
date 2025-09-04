@@ -16,8 +16,8 @@ export default function HomePage() {
   // Bootstrap minimal demo data once if no entrants saved
   useEffect(() => {
     (async () => {
-      const es = await load<Entrant[]>("yc:entrants", []);
-      const initial =
+      const es = (await load<Entrant[]>("yc:entrants")) ?? [];
+const initial: Entrant[] =
         es.length > 0
           ? es
           : [
