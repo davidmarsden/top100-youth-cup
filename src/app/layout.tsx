@@ -1,16 +1,16 @@
+// Root layout required by Next.js App Router
 import "./globals.css";
-import type { ReactNode } from "react";
 
 export const metadata = {
   title: "Top 100 Youth Cup",
-  description: "Prize draw, registration, and tournament organiser",
+  description: "S26",
 };
 
-export default function RootLayout({ children }: { children: ReactNode }) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      <body className="min-h-screen bg-gray-50 text-gray-900">
-        <div className="max-w-5xl mx-auto p-4">{children}</div>
+      <body className="bg-gray-50 text-gray-900">
+        <main className="max-w-3xl mx-auto px-6 py-12">{children}</main>
       </body>
     </html>
   );
