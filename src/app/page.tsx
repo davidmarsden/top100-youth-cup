@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import type { Entrant, GroupTeam, Fixture, Standing } from "@/lib/types";
 import { defaultSettings } from "@/lib/defaults";
 import { load, save } from "@/lib/utils";
+import { generateRoundRobinFixtures } from "@/lib/tournament";
 import { assignGroups, calculateStandings, generateFixtures } from "@/lib/tournament";
 
 export default function HomePage() {
