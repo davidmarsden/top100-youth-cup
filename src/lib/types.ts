@@ -1,74 +1,44 @@
 // src/lib/types.ts
-
-// Basic season alias
-export type Season = string;
-
-/** Registration / team entry */
 export interface Entrant {
   id: string;
-  season: Season;
   manager: string;
   club?: string | null;
-  seed?: string | null;
-  // optional extras you might add later:
   rating?: number | null;
 }
 
-/** A match/fixture as used across the app */
+export interface GroupTeam {
+  group: string;       // "A", "B", ...
+  entrantId: string;   // Entrant.id
+  manager: string;     // copied from Entrant for easy rendering
+  club?: string | null;
+}
+
 export interface Fixture {
   id: string;
-  season: Season;
-
-  // competition structure
-  stage?: string | null;
-  round?: string | null;
+  group: string;                 // group the fixture belongs to
+  homeId: string;                // Entrant.id
+  awayId: string;                // Entrant.id
   roundLabel?: string | null;
   stageLabel?: string | null;
-  group?: string | null;
-
-  // scheduling
-  scheduledAt?: string | null; // ISO string or null
-
-  // participants (stored as string ids consistently)
-  homeId: string;
-  awayId: string;
-
-  // scores (nullable while not played)
+  scheduledAt?: string | null;   // ISO or null
   homeGoals?: number | null;
   awayGoals?: number | null;
 }
 
-/** Table row for standings */
 export interface Standing {
-  teamId: string;           // Entrant.id
-  group?: string | null;
+  teamId: string;         // Entrant.id
+  teamName: string;       // Entrant.manager (optionally + club)
+  group: string | null;   // "A" | "B" | ... | null
   played: number;
   won: number;
-  draw: number;
+  drawn: number;
   lost: number;
   goalsFor: number;
   goalsAgainst: number;
-  goalDiff: number;
   points: number;
 }
 
-/** A team placed into a group */
-export interface GroupTeam {
-  group: string;  // e.g. "A", "B"...
-  teamId: string; // Entrant.id
-}
-
-/** Tournament settings used by helpers/UI */
 export interface Settings {
-  /** number of groups to create (e.g., 4) */
-  groupCount: number;
-  /** teams per group (optional: derive from entrants.length / groupCount) */
-  teamsPerGroup?: number;
-  /** if true, produce full round-robin fixtures */
-  roundRobin?: boolean;
-  /** if true, use seeds to distribute entrants across groups */
-  seedGroups?: boolean;
+  season: string;       // display only (no logic needed)
+  groupCount: number;   // how many groups to create
 }
-
-// (Optionally export a key type used by Entrants component sorting)
-export type EntrantSortKey = Extract<keyof Entrant, 'manager' | 'club' | 'seed' | 'rating'>;
