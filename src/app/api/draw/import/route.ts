@@ -2,71 +2,134 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
-export const dynamic = "force-dynamic";
-
-type Row = {
-  id: string;
-  created_at: string | null;
-  seed: string | null;
-  winners: unknown | null;   // jsonb (array of names)
-  full_order: string | null; // long text list (optional)
-  ticket_url: string | null; // official ticket URL (optional)
-};
-
-function getSupabaseForServerReads() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
-  const service = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
-  if (!url || !service) {
-    const problems = {
-      hasUrl: Boolean(url),
-      hasServiceRole: Boolean(service),
-      // NOTE: we never expose actual values; just booleans.
-    };
-    throw new Error(
-      `Supabase env missing. Expected NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY. ${JSON.stringify(
-        problems
-      )}`
-    );
-  }
-  // Use the service role on the server so we can read even if RLS blocks anon.
-  return createClient(url, service, { auth: { persistSession: false } });
+/** Small helper to return a JSON error with an HTTP status code. */
+function fail(
+  reason: string,
+  status = 500,
+  extra?: Record<string, unknown>
+) {
+  return NextResponse.json(
+    { ok: false, reason, ...(extra ?? {}) },
+    { status }
+  );
 }
 
-function ok<T>(data: T, status = 200) {
-  return NextResponse.json({ ok: true, data }, { status });
-}
-function fail(message: string, status = 500, extra?: Record<string, unknown>) {
-  return NextResponse.json({ ok: false, error: message, ...extra }, { status });
-}
-
+/**
+ * GET /api/draw
+ * Returns the latest recorded prize draw row (if any) and a diagnostic block.
+ *
+ * This route uses the **service role key** so it can read regardless of RLS.
+ * If the service key/envs are not present at runtime, the response will include
+ * a diagnostic JSON payload so we can pinpoint why Netlify is returning 500s.
+ */
 export async function GET() {
-  try {
-    const supabase = getSupabaseForServerReads();
+  // Read envs (don’t log actual secrets).
+  const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
-    // No generics on .from — avoids TS “expected 2 type arguments” issues.
+  // Quick preflight diagnostics (no secrets shown).
+  const provided = {
+    NEXT_PUBLIC_SUPABASE_URL_present: !!SUPABASE_URL,
+    SUPABASE_SERVICE_ROLE_KEY_present: !!SUPABASE_SERVICE_ROLE_KEY,
+    NEXT_PUBLIC_SUPABASE_ANON_KEY_present: !!SUPABASE_ANON_KEY,
+  };
+
+  // The server **must** have URL + service key. If not, bail with diagnostics.
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
+    return fail("Missing Supabase env vars on server", 500, {
+      diag: {
+        provided,
+        expected: {
+          NEXT_PUBLIC_SUPABASE_URL: "required (string)",
+          SUPABASE_SERVICE_ROLE_KEY: "required (string) — service role key",
+        },
+        note:
+          "These must be configured in your hosting environment (Netlify) under Site settings → Build & deploy → Environment. " +
+          "The service role key is different from the anon key.",
+      },
+    });
+  }
+
+  // Create a service-level client (bypasses RLS).
+  const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+    auth: { persistSession: false },
+    global: { headers: { "x-application": "youth-cup/api/draw" } },
+  });
+
+  try {
+    // Fetch the latest draw row (if any)
     const { data, error } = await supabase
       .from("prize_draws")
       .select("id, created_at, seed, winners, full_order, ticket_url")
       .order("created_at", { ascending: false })
-      .limit(1);
+      .limit(1)
+      .maybeSingle();
 
     if (error) {
-      // Typical failure here (when using anon) is RLS/permission denied.
-      // With service role it should not happen, but we surface details if it does.
-      return fail(`Supabase select failed: ${error.message}`, 500, {
-        code: (error as any)?.code ?? null,
-        hint: (error as any)?.hint ?? null,
+      // Surface supabase error details so we can stop guessing.
+      return fail("Supabase select failed", 500, {
+        diag: {
+          provided,
+          supabaseError: {
+            message: error.message,
+            details: (error as any).details ?? null,
+            hint: (error as any).hint ?? null,
+            code: (error as any).code ?? null,
+          },
+          queryShape:
+            "select id, created_at, seed, winners, full_order, ticket_url from prize_draws order by created_at desc limit 1",
+          tableExpectations: {
+            table: "prize_draws",
+            columns: [
+              "id (uuid or text)",
+              "created_at (timestamptz)",
+              "seed (text)",
+              "winners (jsonb OR text[])",
+              "full_order (text, optional)",
+              "ticket_url (text, optional)",
+            ],
+          },
+          rlsNote:
+            "If you are not using the service role key, RLS must allow read. With the service role key, RLS is bypassed.",
+        },
       });
     }
 
-    if (!data || data.length === 0) {
-      // Clean “no content yet” response (still 200)
-      return ok<Row | null>(null);
+    if (!data) {
+      // No rows yet — return empty with helpful instructions.
+      return NextResponse.json({
+        ok: true,
+        row: null,
+        diag: {
+          provided,
+          message:
+            "No prize_draws rows found yet. Use the Import flow or insert a row in Supabase.",
+        },
+      });
     }
 
-    const latest = data[0] as Row;
-    return ok<Row>(latest);
+    // Happy path
+    return NextResponse.json({
+      ok: true,
+      row: data,
+      diag: {
+        provided,
+        message:
+          "Success. Latest row returned. If UI still errors, the problem is in the front-end.",
+      },
+    });
   } catch (err: any) {
-    return fail(err?.message ?? "Unexpected server error.", 500);
+    // Catch any unexpected runtime errors (network, etc.)
+    return fail("Unhandled server error while fetching draw", 500, {
+      diag: {
+        provided,
+        runtimeError: {
+          message: err?.message ?? String(err),
+          name: err?.name ?? null,
+          stack: err?.stack ?? null,
+        },
+      },
+    });
   }
 }
