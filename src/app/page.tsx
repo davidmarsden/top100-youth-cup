@@ -31,12 +31,16 @@ const initial: Entrant[] =
       const grouped = assignGroups(initial, { groupCount: defaultSettings.groupCount });
       setGroups(grouped);
 
-      const savedFx = await load<Fixture[]>("yc:fixtures", []);
-      const fx = savedFx.length ? savedFx : generateFixtures(grouped);
-      setFixtures(fx);
+      // src/app/page.tsx — inside your effect where you load fixtures
+const savedFx = (await load<Fixture[]>("yc:fixtures")) ?? [];
+const fx: Fixture[] = savedFx.length > 0
+  ? savedFx
+  : generateRoundRobinFixtures(initial, grouped, SEASON);
 
-      const st = calculateStandings(fx, initial, grouped);
-      setStandings(st);
+setFixtures(fx);
+
+const st = calculateStandings(fx, initial, grouped);
+setStandings(st);
     })();
   }, []);
 
