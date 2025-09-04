@@ -2,13 +2,19 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Entrant, Fixture, GroupTeam, Standing } from "@/lib/types";
+
+// Types
+import type { Entrant, Fixture, GroupTeam, Standing } from "@/lib/types";
+
+// Lib
 import { load, save } from "@/lib/utils";
 import {
   assignGroups,
   calculateStandings,
   generateFixtures,
 } from "@/lib/tournament";
+
+// UI/contexts
 import { useAdmin } from "@/components/AdminGate";
 import { useSeason } from "@/components/SeasonContext";
 
@@ -21,11 +27,13 @@ export default function HomePage() {
   const [fixtures, setFixtures] = useState<Fixture[]>([]);
   const [standings, setStandings] = useState<Standing[]>([]);
 
+  // tweak as needed
   const defaultSettings = { groupCount: 4 };
 
   useEffect(() => {
     (async () => {
-      const savedEntrants = await load<Entrant[]>("entrants");
+      // ✅ load requires 2 args: (key, fallback)
+      const savedEntrants = await load<Entrant[]>("entrants", []);
       const es = savedEntrants ?? [];
       setEntrants(es);
 
@@ -35,12 +43,16 @@ export default function HomePage() {
         });
         setGroups(groupTeams);
 
-        const savedFixtures = await load<Fixture[]>("fixtures");
-        const fs = savedFixtures ?? generateFixtures(groupTeams);
+        // Try fixtures from storage; if none, generate from groups
+        const savedFixtures = await load<Fixture[]>("fixtures", []);
+        const fs =
+          savedFixtures && savedFixtures.length > 0
+            ? savedFixtures
+            : generateFixtures(groupTeams);
         setFixtures(fs);
 
-        const standings = calculateStandings(groupTeams, fs);
-        setStandings(standings);
+        const sts = calculateStandings(groupTeams, fs);
+        setStandings(sts);
       }
     })();
   }, []);
@@ -50,11 +62,19 @@ export default function HomePage() {
     await save("fixtures", fixtures);
   };
 
+  // Helper to bucket standings by group for table rendering
+  const standingsByGroup = standings.reduce<Record<string, Standing[]>>(
+    (acc, s) => {
+      if (!acc[s.group]) acc[s.group] = [];
+      acc[s.group].push(s);
+      return acc;
+    },
+    {}
+  );
+
   return (
     <div className="p-6 space-y-6">
-      <h1 className="text-2xl font-bold">
-        Youth Cup – Season {season}
-      </h1>
+      <h1 className="text-2xl font-bold">Youth Cup – Season {season}</h1>
 
       {admin && (
         <div className="flex gap-4">
@@ -69,78 +89,83 @@ export default function HomePage() {
 
       <section>
         <h2 className="text-xl font-semibold">Groups</h2>
-        <ul className="list-disc ml-6">
-          {groups.map((g) => (
-            <li key={g.id}>
-              {g.group} – {g.manager} ({g.club})
-            </li>
-          ))}
-        </ul>
+        {groups.length === 0 ? (
+          <p className="text-sm text-gray-600">No groups yet.</p>
+        ) : (
+          <ul className="list-disc ml-6">
+            {groups.map((g) => (
+              <li key={g.id}>
+                {g.group} – {g.manager} {g.club ? `(${g.club})` : ""}
+              </li>
+            ))}
+          </ul>
+        )}
       </section>
 
       <section>
         <h2 className="text-xl font-semibold">Fixtures</h2>
-        <ul className="list-disc ml-6">
-          {fixtures.map((fx) => (
-            <li key={fx.id}>
-              {fx.stageLabel ?? fx.stage} – {fx.homeId} vs {fx.awayId}
-              {fx.homeGoals != null && fx.awayGoals != null
-                ? ` (${fx.homeGoals}–${fx.awayGoals})`
-                : ""}
-            </li>
-          ))}
-        </ul>
+        {fixtures.length === 0 ? (
+          <p className="text-sm text-gray-600">No fixtures yet.</p>
+        ) : (
+          <ul className="list-disc ml-6">
+            {fixtures.map((fx) => (
+              <li key={fx.id}>
+                {fx.stageLabel ?? fx.stage ?? "Stage"} – {fx.homeId} vs {fx.awayId}
+                {fx.homeGoals != null && fx.awayGoals != null
+                  ? ` (${fx.homeGoals}–${fx.awayGoals})`
+                  : ""}
+              </li>
+            ))}
+          </ul>
+        )}
       </section>
 
       <section>
         <h2 className="text-xl font-semibold">Standings</h2>
-        {Object.entries(
-          standings.reduce<Record<string, Standing[]>>((acc, s) => {
-            if (!acc[s.group]) acc[s.group] = [];
-            acc[s.group].push(s);
-            return acc;
-          }, {})
-        ).map(([g, rows]) => (
-          <div key={g} className="mb-4">
-            <h3 className="font-bold">Group {g}</h3>
-            <table className="min-w-full border border-gray-300">
-              <thead>
-                <tr className="bg-gray-100">
-                  <th className="px-2 py-1 border">Team</th>
-                  <th className="px-2 py-1 border">P</th>
-                  <th className="px-2 py-1 border">W</th>
-                  <th className="px-2 py-1 border">D</th>
-                  <th className="px-2 py-1 border">L</th>
-                  <th className="px-2 py-1 border">GF</th>
-                  <th className="px-2 py-1 border">GA</th>
-                  <th className="px-2 py-1 border">Pts</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((s) => {
-                  const e = entrants.find((x) => x.id === s.teamId);
-                  return (
-                    <tr key={s.teamId}>
-                      <td className="border px-2 py-1">
-                        {e?.manager} ({e?.club})
-                      </td>
-                      <td className="border px-2 py-1">{s.played}</td>
-                      <td className="border px-2 py-1">{s.won}</td>
-                      <td className="border px-2 py-1">{s.drawn}</td>
-                      <td className="border px-2 py-1">{s.lost}</td>
-                      <td className="border px-2 py-1">{s.goalsFor}</td>
-                      <td className="border px-2 py-1">{s.goalsAgainst}</td>
-                      <td className="border px-2 py-1 font-bold">
-                        {s.points}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        ))}
+        {Object.keys(standingsByGroup).length === 0 ? (
+          <p className="text-sm text-gray-600">No standings yet.</p>
+        ) : (
+          Object.entries(standingsByGroup).map(([g, rows]) => (
+            <div key={g} className="mb-4">
+              <h3 className="font-bold">Group {g}</h3>
+              <table className="min-w-full border border-gray-300">
+                <thead>
+                  <tr className="bg-gray-100">
+                    <th className="px-2 py-1 border">Team</th>
+                    <th className="px-2 py-1 border">P</th>
+                    <th className="px-2 py-1 border">W</th>
+                    <th className="px-2 py-1 border">D</th>
+                    <th className="px-2 py-1 border">L</th>
+                    <th className="px-2 py-1 border">GF</th>
+                    <th className="px-2 py-1 border">GA</th>
+                    <th className="px-2 py-1 border">Pts</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((s) => {
+                    const e = entrants.find((x) => x.id === s.teamId);
+                    return (
+                      <tr key={s.teamId}>
+                        <td className="border px-2 py-1">
+                          {e?.manager} {e?.club ? `(${e.club})` : ""}
+                        </td>
+                        <td className="border px-2 py-1">{s.played}</td>
+                        <td className="border px-2 py-1">{s.won}</td>
+                        <td className="border px-2 py-1">{s.drawn}</td>
+                        <td className="border px-2 py-1">{s.lost}</td>
+                        <td className="border px-2 py-1">{s.goalsFor}</td>
+                        <td className="border px-2 py-1">{s.goalsAgainst}</td>
+                        <td className="border px-2 py-1 font-bold">{s.points}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          ))
+        )}
       </section>
     </div>
   );
 }
+```0
