@@ -2,9 +2,7 @@
 
 import React, { createContext, useContext, useMemo } from 'react';
 
-type SeasonContextValue = {
-  season: string;
-};
+type SeasonContextValue = { season: string };
 
 const SeasonContext = createContext<SeasonContextValue | undefined>(undefined);
 
@@ -21,9 +19,7 @@ export function SeasonProvider({
 
 export function useSeason() {
   const ctx = useContext(SeasonContext);
-  if (!ctx) {
-    throw new Error('useSeason must be used within a SeasonProvider');
-  }
+  if (!ctx) throw new Error('useSeason must be used within a SeasonProvider');
   return ctx;
 }
 
