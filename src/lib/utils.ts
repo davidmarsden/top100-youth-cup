@@ -1,13 +1,13 @@
-// src/lib/utils.ts
+// Safe, tiny storage helpers (SSR friendly)
 
-// SSR-safe localStorage helpers
-export async function load<T>(key: string, fallback: T): Promise<T> {
-  if (typeof window === "undefined") return fallback;
+export async function load<T>(key: string): Promise<T | null> {
+  if (typeof window === "undefined") return null;
   try {
     const raw = window.localStorage.getItem(key);
-    return raw ? (JSON.parse(raw) as T) : fallback;
+    if (!raw) return null;
+    return JSON.parse(raw) as T;
   } catch {
-    return fallback;
+    return null;
   }
 }
 
@@ -16,6 +16,6 @@ export async function save<T>(key: string, value: T): Promise<void> {
   try {
     window.localStorage.setItem(key, JSON.stringify(value));
   } catch {
-    // ignore quota or serialization errors for now
+    // no-op
   }
 }
