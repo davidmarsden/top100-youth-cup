@@ -1,125 +1,81 @@
-// src/app/api/draw/route.ts
 import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { supabaseAdmin } from "@/lib/supabase-server";
 
-// ---- Configuration ----
-const SEASON = "26"; // Season label for this draw
-const ADMIN_KEY = process.env.ADMIN_KEY;
+const SEASON_ID = process.env.NEXT_PUBLIC_SEASON_ID!;
+const ADMIN_KEY = process.env.ADMIN_KEY!;
 
-// Optional persistence via Supabase (keys are already in your env)
-const SUPA_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
-const SUPA_SERVICE = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
-const supabase =
-  SUPA_URL && SUPA_SERVICE ? createClient(SUPA_URL, SUPA_SERVICE) : null;
-
-// Hard-coded eligible managers (for now). In future, compute from forfeits.
+/** Hard-coded eligible managers (future: compute from forfeits) */
 const ELIGIBLE = [
-  "Walter Gogh",
-  "Heath Brown",
-  "Chris Taylor",
-  "Gav Harmer",
-  "Adam",
-  "Bojan",
-  "Yamil Mc02",
-  "Hugo Costa",
-  "James McKenzie",
-  "Carl Martin",
-  "Ash L",
-  "Chris Meida",
-  "Dario Saviano",
-  "Chris Baggio",
-  "Glen Mullan",
-  "David Marsden",
-  "Regan Thompson",
-  "Doug Earle",
-  "Marco G",
-  "Steven Allington",
-  "Dan Wallace",
-  "Simon Thomas",
-  "Jay Jones (Gladbach, now Monaco)",
-  "Ricardo Ferreira",
-  "Scott Mckenzie",
-  "Paul Masters",
-  "Mr TRX",
-  "Pedro Vilar",
-  "Neil Frankland",
+  "Walter Gogh","Heath Brown","Chris Taylor","Gav Harmer","Adam","Bojan",
+  "Yamil Mc02","Hugo Costa","James McKenzie","Carl Martin","Ash L",
+  "Chris Meida","Dario Saviano","Chris Baggio","Glen Mullan","David Marsden",
+  "Regan Thompson","Doug Earle","Marco G","Steven Allington","Dan Wallace",
+  "Simon Thomas","Jay Jones (Gladbach, now Monaco)","Ricardo Ferreira",
+  "Scott Mckenzie","Paul Masters","Mr TRX","Pedro Vilar","Neil Frankland",
   "Fredrik Johansson (Wolfsburg, now Sporting)",
-];
+] as const;
 
-// Utility: crypto-strong, unique sample of n from array (without replacement)
-function drawNUnique<T>(source: T[], n: number): T[] {
-  if (n > source.length) throw new Error("Sample size > pool");
-  const pool = source.slice();
-  const out: T[] = [];
-  while (out.length < n) {
-    const u32 = new Uint32Array(1);
-    crypto.getRandomValues(u32);
-    const idx = u32[0] % pool.length;
-    out.push(pool.splice(idx, 1)[0]!);
-  }
-  return out;
-}
-
-// Ensure table exists note: we can't migrate here; but we'll try the upsert/select
-// against a `prize_draws` table with columns:
-//   season text PRIMARY KEY, winners jsonb, at timestamptz
-// If it doesn't exist, GET will just return empty & POST will 500 with a clear message.
-async function supaGet() {
-  if (!supabase) return { winners: [] as string[], at: null as string | null };
-  const { data, error } = await supabase
-    .from("prize_draws")
-    .select("season,winners,at")
-    .eq("season", SEASON)
-    .maybeSingle();
-  if (error) {
-    // Don’t crash builds; surface empty with hint
-    return { winners: [] as string[], at: null as string | null };
-  }
-  return {
-    winners: (data?.winners as string[]) || [],
-    at: (data?.at as string) || null,
-  };
-}
-
-async function supaSave(winners: string[], at: string) {
-  if (!supabase) {
-    throw new Error(
-      "Supabase not configured. Set NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY."
-    );
-  }
-  // Upsert by season
-  const { error } = await supabase
-    .from("prize_draws")
-    .upsert({ season: SEASON, winners, at }, { onConflict: "season" });
-  if (error) throw error;
-}
-
-// --- GET: public, returns winners (if any) ---
+/** GET: public – fetch latest draw for the season */
 export async function GET() {
-  const { winners, at } = await supaGet();
-  return NextResponse.json({ season: SEASON, winners, at });
+  const { data, error } = await supabaseAdmin
+    .from("prize_draws")
+    .select("winners, seed, created_at")
+    .eq("season_id", SEASON_ID)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+
+  return NextResponse.json({
+    winners: data?.winners ?? [],
+    seed: data?.seed ?? null,
+    at: data?.created_at ?? null,
+  });
 }
 
-// --- POST: admin-only, performs the draw exactly once ---
+/** POST: admin-only – perform a new draw and persist */
 export async function POST(req: Request) {
-  // Verify admin key via header or body
-  const body = await req.json().catch(() => ({} as any));
-  const provided =
-    req.headers.get("x-admin-key") || body?.adminKey || body?.key || "";
-  if (ADMIN_KEY && provided !== ADMIN_KEY) {
-    return new NextResponse("Unauthorized", { status: 401 });
+  const key = req.headers.get("x-admin-key") ?? new URL(req.url).searchParams.get("key");
+  if (key !== ADMIN_KEY) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const { seed } = await req.json().catch(() => ({ seed: null as string | null }));
+
+  // shuffle + pick 3 distinct managers
+  const pool = [...ELIGIBLE];
+  const rng = seed ? mulberry32(hashString(seed)) : Math.random;
+  for (let i = pool.length - 1; i > 0; i--) {
+    const j = Math.floor(rng() * (i + 1));
+    [pool[i], pool[j]] = [pool[j], pool[i]];
   }
+  const winners = pool.slice(0, 3);
 
-  // Prevent re-draw if already set
-  const existing = await supaGet();
-  if (existing.winners.length > 0) {
-    return new NextResponse("Draw already completed", { status: 409 });
+  const { error } = await supabaseAdmin.from("prize_draws").insert({
+    season_id: SEASON_ID,
+    seed: seed ?? null,
+    winners, // text[]
+  });
+
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  return NextResponse.json({ winners });
+}
+
+/* ---- utilities ---- */
+function hashString(s: string) {
+  let h = 2166136261 >>> 0;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 16777619);
   }
-
-  // Draw exactly 3 winners, persist, return
-  const winners = drawNUnique(ELIGIBLE, 3);
-  const at = new Date().toISOString();
-
-  await supaSave(winners, at);
-  return NextResponse.json({ season: SEASON, winners, at });
+  return h >>> 0;
+}
+function mulberry32(a: number) {
+  return function () {
+    let t = (a += 0x6d2b79f5);
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
 }
