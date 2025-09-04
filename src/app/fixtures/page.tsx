@@ -1,86 +1,88 @@
+// src/app/fixtures/page.tsx
 'use client';
 
 import { useEffect, useState } from 'react';
-
-// Types
-import { Fixture, Entrant } from '@/lib/types';
+import type { Fixture, Entrant } from '@/lib/types';
 
 export default function FixturesPage() {
   const [fixtures, setFixtures] = useState<Fixture[]>([]);
   const [entrants, setEntrants] = useState<Entrant[]>([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const loadData = async () => {
+    async function load() {
       try {
-        const [fxRes, enRes] = await Promise.all([
-          fetch('/api/fixtures'),
-          fetch('/api/entrants'),
+        const [fxRes, eRes] = await Promise.all([
+          fetch('/api/fixtures').then(r => r.json()),
+          fetch('/api/entrants').then(r => r.json()),
         ]);
-
-        if (!fxRes.ok) throw new Error('Failed to load fixtures');
-        if (!enRes.ok) throw new Error('Failed to load entrants');
-
-        const fxData: Fixture[] = await fxRes.json();
-        const enData: Entrant[] = await enRes.json();
-
-        setFixtures(fxData);
-        setEntrants(enData);
+        setFixtures(fxRes);
+        setEntrants(eRes);
       } catch (err) {
-        console.error(err);
+        console.error('Error loading fixtures/entrants', err);
+      } finally {
+        setLoading(false);
       }
-    };
-
-    loadData();
+    }
+    load();
   }, []);
 
-  // Helper: map entrant id → club name
+  if (loading) return <p className="p-4">Loading fixtures…</p>;
+
+  // helper: find entrant’s club by ID
   const clubOf = (id: string | null | undefined) =>
-    id ? entrants.find((e) => e.id === id)?.club ?? id : 'TBC';
+    id ? entrants.find(e => e.id === id)?.club ?? '' : '';
 
-  // Group fixtures by stage
+  // group fixtures by stage
   const byStage: Record<string, Fixture[]> = {};
-  fixtures.forEach((f) => {
-    const key = f.stage ?? 'Uncategorised';
-    if (!byStage[key]) byStage[key] = [];
-    byStage[key].push(f);
+  fixtures.forEach(fx => {
+    const k = fx.stage_label ?? 'Unknown';
+    if (!byStage[k]) byStage[k] = [];
+    byStage[k].push(fx);
   });
-
-  // Sort each stage's fixtures by kickoff then id
-  Object.keys(byStage).forEach((k) => {
+  Object.keys(byStage).forEach(k => {
     byStage[k].sort(
       (a, b) =>
-        (a.kickoff ?? '').localeCompare(b.kickoff ?? '') ||
+        (a.scheduledAt ?? '').localeCompare(b.scheduledAt ?? '') ||
         a.id.localeCompare(b.id),
     );
   });
 
   return (
     <div className="p-6">
-      <h1 className="text-3xl font-bold mb-6">Fixtures</h1>
+      <h1 className="text-2xl font-bold mb-4">Fixtures & Results</h1>
       <div className="space-y-8">
-        {Object.entries(byStage).map(([stage, fx]) => (
+        {Object.keys(byStage).map(stage => (
           <div key={stage}>
-            <h2 className="text-xl font-semibold mb-3">{stage}</h2>
-            <div className="grid lg:grid-cols-3 gap-4">
-              {fx.map((f) => (
-                <div
-                  key={f.id}
-                  className="border rounded p-3 bg-white shadow-sm"
-                >
-                  <div className="text-sm text-gray-600 mb-1">
-                    {f.kickoff ?? 'TBC'}
-                  </div>
-                  <div className="font-medium">
-                    {clubOf(f.homeId)} vs {clubOf(f.awayId)}
-                  </div>
-                  {f.homeGoals != null && f.awayGoals != null && (
-                    <div className="text-lg font-bold">
-                      {f.homeGoals} - {f.awayGoals}
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
+            <h2 className="text-xl font-semibold mb-2">{stage}</h2>
+            <table className="min-w-full border border-gray-300 text-sm">
+              <thead className="bg-gray-100">
+                <tr>
+                  <th className="px-2 py-1 text-left">Date</th>
+                  <th className="px-2 py-1 text-left">Home</th>
+                  <th className="px-2 py-1 text-left">Score</th>
+                  <th className="px-2 py-1 text-left">Away</th>
+                </tr>
+              </thead>
+              <tbody>
+                {byStage[stage].map(fx => (
+                  <tr key={fx.id} className="border-t">
+                    <td className="px-2 py-1">
+                      {fx.scheduledAt
+                        ? new Date(fx.scheduledAt).toLocaleDateString()
+                        : '—'}
+                    </td>
+                    <td className="px-2 py-1">{clubOf(fx.homeId)}</td>
+                    <td className="px-2 py-1 text-center">
+                      {fx.homeGoals != null && fx.awayGoals != null
+                        ? `${fx.homeGoals} – ${fx.awayGoals}`
+                        : 'vs'}
+                    </td>
+                    <td className="px-2 py-1">{clubOf(fx.awayId)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         ))}
       </div>
