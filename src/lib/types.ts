@@ -1,39 +1,34 @@
 // src/lib/types.ts
 
-export type Entrant = {
+// An Entrant is a team/club in the tournament
+export interface Entrant {
   id: string;
   season: string;
-  manager: string;
-  club: string | null;
+  manager?: string;
+  club?: string | null;
   seed?: string | null;
-};
+}
 
-export type GroupTeam = {
-  group: string;
-  entrantId: string;
-};
-
-export type Fixture = {
+// A Fixture is a scheduled match
+export interface Fixture {
   id: string;
   season: string;
-
-  // ✅ added to satisfy /api/fixtures/route.ts
-  stage: string | null;                 // e.g., 'groups', 'youth_cup', 'youth_shield'
-  round: number | string | null;        // e.g., 1, 2, 3 (or string from source)
-
+  stage: string | null;
+  round: string | null;
   round_label: string | null;
   stage_label: string | null;
   group: string | null;
-
-  kickoff: string | null;               // previously scheduled_at
+  kickoff: string | null; // ✅ replaces scheduledAt
   homeId: string | null;
   awayId: string | null;
   homeGoals: number | null;
   awayGoals: number | null;
-};
+}
 
-export type Standing = {
+// A Standing is a row in the group table
+export interface Standing {
   entrantId: string;
+  group: string; // ✅ added so byGroup[...] works
   played: number;
   won: number;
   drawn: number;
@@ -42,11 +37,16 @@ export type Standing = {
   goalsAgainst: number;
   goalDifference: number;
   points: number;
-  group?: string;                        // optional grouping key
-};
+}
 
-export type Settings = {
+// A GroupTeam is an Entrant assigned into a group
+export interface GroupTeam {
+  entrantId: string;
+  group: string;
+}
+
+// Settings for tournament configuration
+export interface Settings {
   season: string;
   groupCount: number;
-  teamsPerGroup: number;
-};
+}
