@@ -1,47 +1,38 @@
+// src/app/api/fixtures/route.ts
 import { NextResponse } from "next/server";
-import { neon } from "@neondatabase/serverless";
-import { Fixture } from "@/lib/types";
-
-const sql = neon(process.env.DATABASE_URL!);
-
-// Helper: map DB row → Fixture
-function toCamelRow(r: any): Fixture {
-  return {
-    id: String(r.id),
-    season: String(r.season),
-
-    // optional metadata
-    stage: r.stage ?? null,
-    round: r.round ?? null,
-    round_label: r.round_label ?? null,
-    stage_label: r.stage_label ?? null,
-    group: r.group ?? null,
-
-    // datetime (optional)
-    scheduledAt: r.scheduled_at ?? null,
-
-    // ⬇️ force IDs to string; never null
-    homeId: r.home_id != null ? String(r.home_id) : "",
-    awayId: r.away_id != null ? String(r.away_id) : "",
-
-    // scores (nullable → number | null)
-    homeGoals:
-      r.home_goals === "" || r.home_goals == null ? null : Number(r.home_goals),
-    awayGoals:
-      r.away_goals === "" || r.away_goals == null ? null : Number(r.away_goals),
-
-    // optional
-    venue: r.venue ?? null,
-  };
-}
+import { sql } from "@neondatabase/serverless";
+import type { Fixture } from "@/lib/types";
 
 export async function GET() {
   try {
-    const rows = await sql`SELECT * FROM fixtures`;
-    const fixtures: Fixture[] = rows.map(toCamelRow);
+    const rows = await sql`
+      SELECT 
+        id, season, stage, round, round_label, stage_label, "group",
+        scheduled_at, home_id, away_id, home_goals, away_goals
+      FROM fixtures
+    `;
+
+    const fixtures: Fixture[] = rows.map((r: any) => ({
+      id: String(r.id),
+      season: String(r.season),
+      stage: r.stage ?? null,
+      round: r.round ?? null,
+      roundLabel: r.round_label ?? null,   // ✅ mapped to camelCase
+      stageLabel: r.stage_label ?? null,   // ✅ mapped to camelCase
+      group: r.group ?? null,
+      scheduledAt:
+        r.scheduled_at == null || r.scheduled_at === "" ? null : String(r.scheduled_at),
+      homeId: r.home_id == null ? null : String(r.home_id),
+      awayId: r.away_id == null ? null : String(r.away_id),
+      homeGoals:
+        r.home_goals === "" || r.home_goals == null ? null : Number(r.home_goals),
+      awayGoals:
+        r.away_goals === "" || r.away_goals == null ? null : Number(r.away_goals),
+    }));
+
     return NextResponse.json(fixtures);
-  } catch (err) {
-    console.error("Error fetching fixtures:", err);
+  } catch (error) {
+    console.error("Error fetching fixtures:", error);
     return NextResponse.json({ error: "Failed to fetch fixtures" }, { status: 500 });
   }
 }
