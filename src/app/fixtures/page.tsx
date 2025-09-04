@@ -33,10 +33,10 @@ export default function FixturesPage() {
   const clubOf = (id: string | null | undefined) =>
     id ? entrants.find(e => e.id === id)?.club ?? '' : '';
 
-  // group fixtures by stage
+  // group fixtures by stage (use camelCase stageLabel)
   const byStage: Record<string, Fixture[]> = {};
   fixtures.forEach(fx => {
-    const k = fx.stage_label ?? 'Unknown';
+    const k = fx.stageLabel ?? 'Unknown';
     if (!byStage[k]) byStage[k] = [];
     byStage[k].push(fx);
   });
@@ -89,3 +89,4 @@ export default function FixturesPage() {
     </div>
   );
 }
+```0
