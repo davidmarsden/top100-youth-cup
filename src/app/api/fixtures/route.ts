@@ -3,15 +3,21 @@ import { NextResponse } from "next/server";
 import type { Fixture } from "@/lib/types";
 import { neon } from "@neondatabase/serverless";
 
-/**
- * GET /api/fixtures
- * Returns all fixtures from the database, mapped into Fixture type
- */
 export async function GET() {
   try {
-    const sql = neon(process.env.DATABASE_URL!);
+    const url = process.env.DATABASE_URL;
+    if (!url) {
+      // Avoids cryptic failures; build won’t call this, but runtime will get a clear message.
+      return NextResponse.json(
+        { error: "DATABASE_URL is not configured on the server." },
+        { status: 500 }
+      );
+    }
 
-    const { rows: data } = await sql`
+    const sql = neon(url);
+
+    // NOTE: Neon returns an array of rows (not { rows }).
+    const data = (await sql`
       SELECT
         id,
         season,
@@ -27,13 +33,13 @@ export async function GET() {
         away_goals
       FROM fixtures
       ORDER BY scheduled_at ASC NULLS LAST, id ASC
-    `;
+    `) as any[]; // keep it simple; we normalize below
 
     const fixtures: Fixture[] = (data ?? []).map((r: any) => ({
       id: String(r.id),
       season: String(r.season),
 
-      // labels/meta
+      // meta
       stage: r.stage ?? null,
       round: r.round ?? null,
       roundLabel: r.round_label ?? null,
@@ -43,11 +49,11 @@ export async function GET() {
       // time
       scheduledAt: r.scheduled_at ?? null,
 
-      // teams — force to string
+      // teams — force to string (empty string if missing)
       homeId: r.home_id != null ? String(r.home_id) : "",
       awayId: r.away_id != null ? String(r.away_id) : "",
 
-      // scores
+      // scores — null if blank/undefined, otherwise number
       homeGoals:
         r.home_goals === "" || r.home_goals == null ? null : Number(r.home_goals),
       awayGoals:
@@ -55,7 +61,7 @@ export async function GET() {
     }));
 
     return NextResponse.json({ fixtures });
-  } catch (err: any) {
+  } catch (err) {
     console.error("Error fetching fixtures:", err);
     return NextResponse.json(
       { error: "Failed to load fixtures" },
