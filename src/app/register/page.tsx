@@ -1,97 +1,83 @@
+// src/app/register/page.tsx
 'use client';
 
-import React, { useEffect, useState } from 'react';
-import { Entrant } from '@/lib/types';
+import { useEffect, useMemo, useState } from 'react';
+import type { Entrant } from '@/lib/types';
+import { useSeason } from '@/components/SeasonContext';
 import { load, save } from '@/lib/utils';
-import SectionCard from '@/components/SectionCard';
-import { isSupabase } from '@/lib/mode';
-import { useSeason } from '@/components/SeasonProvider';
+import { useAdmin } from '@/components/AdminGate';
 
-export default function RegisterPage(){
+export default function RegisterPage() {
   const SEASON = useSeason();
-  const [entrants, setEntrants] = useState<Entrant[]>(
-    () => (isSupabase ? [] : load<Entrant[]>('yc:entrants', []))
+  const isAdmin = useAdmin();
+
+  // If you’re using Supabase for entrants, prefer fetching from API.
+  // In the client, only NEXT_PUBLIC_* env vars are exposed.
+  const isSupabase = useMemo(
+    () => Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL) && Boolean(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY),
+    []
   );
-  useEffect(()=>{ if (!isSupabase) save('yc:entrants', entrants); }, [entrants]);
 
-  const [form, setForm] = useState({ manager:'', club:'', rating:'' });
+  // ✅ Always provide a synchronous default for useState
+  const [entrants, setEntrants] = useState<Entrant[]>([]);
 
-  const onSubmit = async (e:React.FormEvent)=>{
-    e.preventDefault();
-    const rating = form.rating.trim()==='' ? undefined : Number(form.rating);
-    const id = (crypto as any)?.randomUUID?.() || Math.random().toString(36).slice(2);
+  // Load any locally saved entrants (only when not using Supabase)
+  useEffect(() => {
+    if (isSupabase) return;
 
-    if (isSupabase) {
-      await fetch('/api/entrants', {
-        method: 'POST',
-        headers: { 'Content-Type':'application/json' },
-        body: JSON.stringify({
-          season: SEASON,
-          manager: form.manager.trim(),
-          club: form.club.trim(),
-          rating: isNaN(Number(rating))?undefined:rating
-        })
-      });
-      const res = await fetch(`/api/entrants?season=${SEASON}`);
-      const json = await res.json();
-      setEntrants(json.entrants || []);
-    } else {
-      setEntrants(prev=> [...prev, { id, manager: form.manager.trim(), club: form.club.trim(), rating: isNaN(Number(rating))?undefined:rating }]);
-    }
+    (async () => {
+      // If your load signature is load<T>(key: string, fallback: T),
+      // this still works because we coalesce to [] below.
+      const saved = await load<Entrant[]>('yc:entrants', []);
+      setEntrants(saved ?? []);
+    })();
+  }, [isSupabase]);
 
-    setForm({ manager:'', club:'', rating:'' });
-    alert(`Registered for ${SEASON}! You can return to the dashboard to draw groups when ready.`);
-  };
+  // Persist locally whenever entrants change (only when not using Supabase)
+  useEffect(() => {
+    if (isSupabase) return;
+    save('yc:entrants', entrants);
+  }, [isSupabase, entrants]);
 
   return (
-    <div className="grid md:grid-cols-2 gap-4">
-      <SectionCard title={`Register your team — ${SEASON}`}>
-        <form onSubmit={onSubmit} className="space-y-3">
-          <div>
-            <label className="block text-sm opacity-80">Manager name</label>
-            <input required className="w-full px-3 py-2 rounded-xl bg-white/10 border border-white/20" value={form.manager} onChange={e=>setForm(f=>({...f, manager:e.target.value}))} />
-          </div>
-          <div>
-            <label className="block text-sm opacity-80">Club name</label>
-            <input required className="w-full px-3 py-2 rounded-xl bg-white/10 border border-white/20" value={form.club} onChange={e=>setForm(f=>({...f, club:e.target.value}))} />
-          </div>
-          <div>
-            <label className="block text-sm opacity-80">Avg rating (XI, optional)</label>
-            <input className="w-full px-3 py-2 rounded-xl bg-white/10 border border-white/20" value={form.rating} onChange={e=>setForm(f=>({...f, rating:e.target.value}))} placeholder="e.g., 78" />
-          </div>
-          <button className="btn-primary" type="submit">Submit</button>
-        </form>
-        <p className="mt-3 text-sm opacity-80">{isSupabase ? 'Shared via Supabase.' : 'Saved locally in this browser.'}</p>
-      </SectionCard>
+    <main className="max-w-3xl mx-auto p-6 space-y-6">
+      <header className="space-y-1">
+        <h1 className="text-2xl font-semibold">Register</h1>
+        <p className="text-sm text-gray-500">Season: {SEASON}</p>
+      </header>
 
-      <SectionCard title={`Current registrations — ${SEASON}`}>
-        <div className="max-h-[420px] overflow-auto">
-          <table className="table">
-            <thead><tr className="text-left opacity-80">
-              <th className="py-1">Manager</th><th className="py-1">Club</th><th className="py-1 text-right">Rating</th>
-            </tr></thead>
-            <tbody>
-              {entrants.map(e=> (
-                <tr key={e.id} className="border-t border-white/10">
-                  <td className="py-1 pr-2">{e.manager}</td>
-                  <td className="py-1 pr-2">{e.club}</td>
-                  <td className="py-1 text-right">{e.rating ?? '–'}</td>
-                </tr>
+      {!isSupabase && (
+        <section className="rounded-lg border p-4">
+          <h2 className="font-medium mb-2">Local Entrants</h2>
+          {entrants.length === 0 ? (
+            <p className="text-sm text-gray-500">No entrants yet.</p>
+          ) : (
+            <ul className="list-disc ml-6">
+              {entrants.map((e) => (
+                <li key={e.id}>
+                  {e.manager}
+                  {e.club ? ` (${e.club})` : ''}
+                  {e.seed ? ` — seed ${e.seed}` : ''}
+                </li>
               ))}
-            </tbody>
-          </table>
-          {!isSupabase && (
-            <div className="mt-3">
-              <button className="btn border-red-400 hover:bg-red-400/20" onClick={()=>{
-                if (!confirm('Clear all entrants (local only)?')) return;
-                setEntrants([]);
-                if (typeof window !== 'undefined') window.localStorage.removeItem('yc:entrants');
-                alert('Entrants cleared (local).');
-              }}>Clear local entrants</button>
-            </div>
+            </ul>
           )}
-        </div>
-      </SectionCard>
-    </div>
+        </section>
+      )}
+
+      {isSupabase && (
+        <section className="rounded-lg border p-4">
+          <p className="text-sm text-gray-500">
+            Supabase mode detected. Fetch entrants from your API or Supabase client here.
+          </p>
+        </section>
+      )}
+
+      {isAdmin && (
+        <p className="text-xs text-gray-400">
+          Admin: you can add controls here to modify entrants and call <code>setEntrants</code>.
+        </p>
+      )}
+    </main>
   );
 }
