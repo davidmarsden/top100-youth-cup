@@ -27,7 +27,6 @@ export default function HomePage() {
   const [fixtures, setFixtures] = useState<Fixture[]>([]);
   const [standings, setStandings] = useState<Standing[]>([]);
 
-  // tweak as needed
   const defaultSettings = { groupCount: 4 };
 
   useEffect(() => {
@@ -38,12 +37,9 @@ export default function HomePage() {
       setEntrants(es);
 
       if (es.length > 0) {
-        const groupTeams = assignGroups(es, {
-          groupCount: defaultSettings.groupCount,
-        });
+        const groupTeams = assignGroups(es, { groupCount: defaultSettings.groupCount });
         setGroups(groupTeams);
 
-        // Try fixtures from storage; if none, generate from groups
         const savedFixtures = await load<Fixture[]>("fixtures", []);
         const fs =
           savedFixtures && savedFixtures.length > 0
@@ -93,11 +89,14 @@ export default function HomePage() {
           <p className="text-sm text-gray-600">No groups yet.</p>
         ) : (
           <ul className="list-disc ml-6">
-            {groups.map((g, idx) => (
-              <li key={`${g.group}-${idx}`}>
-                {g.group} – {g.manager} {g.club ? `(${g.club})` : ""}
-              </li>
-            ))}
+            {groups.map((g, idx) => {
+              const e = entrants.find((x) => x.id === g.teamId);
+              return (
+                <li key={`${g.group}-${idx}`}>
+                  {g.group} – {e?.manager ?? "—"} {e?.club ? `(${e.club})` : ""}
+                </li>
+              );
+            })}
           </ul>
         )}
       </section>
@@ -147,7 +146,7 @@ export default function HomePage() {
                     return (
                       <tr key={s.teamId}>
                         <td className="border px-2 py-1">
-                          {e?.manager} {e?.club ? `(${e.club})` : ""}
+                          {e?.manager ?? "—"} {e?.club ? `(${e.club})` : ""}
                         </td>
                         <td className="border px-2 py-1">{s.played}</td>
                         <td className="border px-2 py-1">{s.won}</td>
