@@ -1,1 +1,13 @@
-node_modules
+# build / cache
+.next/
+out/
+dist/
+coverage/
+# deps
+node_modules/
+# env
+.env
+.env.*
+# misc
+.DS_Store
+*.log
