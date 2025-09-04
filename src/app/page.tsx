@@ -1,123 +1,138 @@
-'use client';
+// src/app/page.tsx
+"use client";
 
-import React, { useEffect, useState } from 'react';
-import { defaultSettings } from '@/lib/defaults';
-import { Entrant, Fixture, Standing, Settings } from '@/lib/types';
-import { load, save } from '@/lib/utils';
-import { assignGroups, calculateStandings, generateFixtures } from '@/lib/tournament';
-import { useAdmin } from '@/components/AdminGate';
-import { useSeason } from '@/components/SeasonContext';
+import { useEffect, useState } from "react";
+import { Entrant, Fixture, GroupTeam, Standing } from "@/lib/types";
+import { load, save } from "@/lib/utils";
+import {
+  assignGroups,
+  calculateStandings,
+  generateFixtures,
+} from "@/lib/tournament";
+import { useAdmin } from "@/components/AdminGate";
+import { useSeason } from "@/components/SeasonContext";
 
-export default function Page() {
+export default function HomePage() {
   const { admin } = useAdmin();
   const { season } = useSeason();
 
   const [entrants, setEntrants] = useState<Entrant[]>([]);
-  const [groups, setGroups] = useState<Record<string, Entrant[]>>({});
+  const [groups, setGroups] = useState<GroupTeam[]>([]);
   const [fixtures, setFixtures] = useState<Fixture[]>([]);
   const [standings, setStandings] = useState<Standing[]>([]);
-  const [settings] = useState<Settings>(defaultSettings);
 
-  // Load saved data
+  const defaultSettings = { groupCount: 4 };
+
   useEffect(() => {
     (async () => {
-      const savedEntrants = await load<Entrant[]>('entrants', []);
+      const savedEntrants = await load<Entrant[]>("entrants");
       const es = savedEntrants ?? [];
       setEntrants(es);
 
-      const groupTeams = assignGroups(es, defaultSettings.groupCount);
-      setGroups(groupTeams);
+      if (es.length > 0) {
+        const groupTeams = assignGroups(es, {
+          groupCount: defaultSettings.groupCount,
+        });
+        setGroups(groupTeams);
 
-      const savedFixtures = await load<Fixture[]>(season, 'fixtures');
-      setFixtures(savedFixtures ?? []);
+        const savedFixtures = await load<Fixture[]>("fixtures");
+        const fs = savedFixtures ?? generateFixtures(groupTeams);
+        setFixtures(fs);
 
-      const savedStandings = await load<Standing[]>(season, 'standings');
-      setStandings(savedStandings ?? []);
+        const standings = calculateStandings(groupTeams, fs);
+        setStandings(standings);
+      }
     })();
-  }, [season]);
+  }, []);
 
-  const doDraw = async () => {
-    const groupTeams = assignGroups(es, { groupCount: defaultSettings.groupCount });
-
-
-    const newFixtures = generateFixtures(groupTeams, season);
-    setFixtures(newFixtures);
-
-    await save(season, 'entrants', entrants);
-    await save(season, 'groups', groupTeams);
-    await save(season, 'fixtures', newFixtures);
-
-    const newStandings = calculateStandings(newFixtures);
-    setStandings(newStandings);
-    await save(season, 'standings', newStandings);
+  const handleSave = async () => {
+    await save("entrants", entrants);
+    await save("fixtures", fixtures);
   };
-
-  const clearEntrants = async () => {
-    setEntrants([]);
-    setGroups({});
-    setFixtures([]);
-    setStandings([]);
-    await save(season, 'entrants', []);
-    await save(season, 'groups', {});
-    await save(season, 'fixtures', []);
-    await save(season, 'standings', []);
-  };
-
-  const byGroup: Record<string, Standing[]> = {};
-  standings.forEach((s) => {
-    if (!byGroup[s.group]) byGroup[s.group] = [];
-    byGroup[s.group].push(s);
-  });
 
   return (
-    <div className="p-4">
-      <h1 className="text-2xl font-bold mb-4">Youth Cup {season}</h1>
+    <div className="p-6 space-y-6">
+      <h1 className="text-2xl font-bold">
+        Youth Cup – Season {season}
+      </h1>
 
       {admin && (
-        <div className="flex gap-2 mb-4">
-          <button className="btn" onClick={doDraw}>
-            Draw Groups
-          </button>
-          <button className="btn border-red-400" onClick={clearEntrants}>
-            Clear Entrants
+        <div className="flex gap-4">
+          <button
+            onClick={handleSave}
+            className="px-4 py-2 bg-blue-600 text-white rounded"
+          >
+            Save Data
           </button>
         </div>
       )}
 
-      <div className="grid md:grid-cols-2 gap-4">
-        {Object.keys(byGroup).map((g) => (
-          <div key={g} className="border rounded p-2">
-            <h2 className="font-semibold mb-2">Group {g}</h2>
-            <table className="w-full text-sm">
+      <section>
+        <h2 className="text-xl font-semibold">Groups</h2>
+        <ul className="list-disc ml-6">
+          {groups.map((g) => (
+            <li key={g.id}>
+              {g.group} – {g.manager} ({g.club})
+            </li>
+          ))}
+        </ul>
+      </section>
+
+      <section>
+        <h2 className="text-xl font-semibold">Fixtures</h2>
+        <ul className="list-disc ml-6">
+          {fixtures.map((fx) => (
+            <li key={fx.id}>
+              {fx.stageLabel ?? fx.stage} – {fx.homeId} vs {fx.awayId}
+              {fx.homeGoals != null && fx.awayGoals != null
+                ? ` (${fx.homeGoals}–${fx.awayGoals})`
+                : ""}
+            </li>
+          ))}
+        </ul>
+      </section>
+
+      <section>
+        <h2 className="text-xl font-semibold">Standings</h2>
+        {Object.entries(
+          standings.reduce<Record<string, Standing[]>>((acc, s) => {
+            if (!acc[s.group]) acc[s.group] = [];
+            acc[s.group].push(s);
+            return acc;
+          }, {})
+        ).map(([g, rows]) => (
+          <div key={g} className="mb-4">
+            <h3 className="font-bold">Group {g}</h3>
+            <table className="min-w-full border border-gray-300">
               <thead>
-                <tr>
-                  <th className="text-left">Team</th>
-                  <th>P</th>
-                  <th>W</th>
-                  <th>D</th>
-                  <th>L</th>
-                  <th>GF</th>
-                  <th>GA</th>
-                  <th>GD</th>
-                  <th>Pts</th>
+                <tr className="bg-gray-100">
+                  <th className="px-2 py-1 border">Team</th>
+                  <th className="px-2 py-1 border">P</th>
+                  <th className="px-2 py-1 border">W</th>
+                  <th className="px-2 py-1 border">D</th>
+                  <th className="px-2 py-1 border">L</th>
+                  <th className="px-2 py-1 border">GF</th>
+                  <th className="px-2 py-1 border">GA</th>
+                  <th className="px-2 py-1 border">Pts</th>
                 </tr>
               </thead>
               <tbody>
-                {byGroup[g].map((s) => {
-                  const e = entrants.find((x) => x.id === s.entrantId);
+                {rows.map((s) => {
+                  const e = entrants.find((x) => x.id === s.teamId);
                   return (
-                    <tr key={s.entrantId} className="border-b last:border-0">
-                      <td className="py-1 pr-2">
-                        {e ? e.club ?? e.manager ?? e.id : s.entrantId}
+                    <tr key={s.teamId}>
+                      <td className="border px-2 py-1">
+                        {e?.manager} ({e?.club})
                       </td>
-                      <td className="py-1 text-right">{s.played}</td>
-                      <td className="py-1 text-right">{s.won}</td>
-                      <td className="py-1 text-right">{s.drawn}</td>
-                      <td className="py-1 text-right">{s.lost}</td>
-                      <td className="py-1 text-right">{s.goalsFor}</td>
-                      <td className="py-1 text-right">{s.goalsAgainst}</td>
-                      <td className="py-1 text-right">{s.goalDifference}</td>
-                      <td className="py-1 text-right font-semibold">{s.points}</td>
+                      <td className="border px-2 py-1">{s.played}</td>
+                      <td className="border px-2 py-1">{s.won}</td>
+                      <td className="border px-2 py-1">{s.drawn}</td>
+                      <td className="border px-2 py-1">{s.lost}</td>
+                      <td className="border px-2 py-1">{s.goalsFor}</td>
+                      <td className="border px-2 py-1">{s.goalsAgainst}</td>
+                      <td className="border px-2 py-1 font-bold">
+                        {s.points}
+                      </td>
                     </tr>
                   );
                 })}
@@ -125,7 +140,7 @@ export default function Page() {
             </table>
           </div>
         ))}
-      </div>
+      </section>
     </div>
   );
 }
