@@ -37,8 +37,8 @@ export default function Page() {
   }, [season]);
 
   const doDraw = async () => {
-    const groupTeams = assignGroups(entrants, settings.groupCount);
-    setGroups(groupTeams);
+    const groupTeams = assignGroups(es, { groupCount: defaultSettings.groupCount });
+
 
     const newFixtures = generateFixtures(groupTeams, season);
     setFixtures(newFixtures);
