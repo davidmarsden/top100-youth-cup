@@ -59,8 +59,8 @@ export default function HomePage() {
       <header className="space-y-1">
         <h1 className="text-3xl font-bold">Top 100 Youth Cup</h1>
         <p className="text-sm text-gray-500">Season 26</p>
-<p className="text-xs text-gray-500">
-  <a className="underline" href="/draw">Go to Prize Draw →</a>
+<p className="text-sm">
+  <a className="underline" href="/draw">View Prize Draw →</a>
 </p>
       </header>
 
