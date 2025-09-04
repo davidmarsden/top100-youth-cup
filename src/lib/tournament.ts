@@ -1,136 +1,66 @@
 // src/lib/tournament.ts
-import type { Entrant, GroupTeam, Fixture, Standing } from "@/lib/types";
+import type { Entrant, Fixture } from "@/lib/types";
 
-/** Assign entrants to groups A.. based on index (simple round-robin bucket). */
-export function assignGroups(
+/**
+ * Generate single round-robin fixtures within each group.
+ * Uses the "circle method" and skips BYEs.
+ */
+export function generateRoundRobinFixtures(
   entrants: Entrant[],
-  opts: { groupCount: number }
-): GroupTeam[] {
-  const groups: GroupTeam[] = [];
-  const letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
-  const count = Math.max(1, Math.min(opts.groupCount || 1, letters.length));
-
-  entrants.forEach((e, idx) => {
-    const g = letters[idx % count];
-    groups.push({
-      group: g,
-      entrantId: e.id,
-      manager: e.manager,
-      club: e.club ?? null,
-    });
-  });
-
-  return groups;
-}
-
-/** Generate simple single round-robin fixtures inside each group. */
-export function generateFixtures(grouped: GroupTeam[]): Fixture[] {
-  const byGroup = grouped.reduce<Record<string, GroupTeam[]>>((acc, gt) => {
-    (acc[gt.group] ||= []).push(gt);
-    return acc;
-  }, {});
-
+  groups: Record<string, Entrant[]>,
+  season: string
+): Fixture[] {
   const fixtures: Fixture[] = [];
-  Object.entries(byGroup).forEach(([group, teams]) => {
-    for (let i = 0; i < teams.length; i++) {
-      for (let j = i + 1; j < teams.length; j++) {
-        const a = teams[i];
-        const b = teams[j];
+
+  Object.entries(groups).forEach(([group, teamsRaw]) => {
+    // Ensure we only include entrants that exist in the master list (defensive)
+    const validIds = new Set(entrants.map(e => e.id));
+    const teams = teamsRaw.filter(t => validIds.has(t.id)).map(t => t.id);
+
+    if (teams.length < 2) return;
+
+    // Round-robin "circle" setup (add BYE if odd)
+    const hasBye = teams.length % 2 === 1;
+    const teamIds = [...teams];
+    if (hasBye) teamIds.push("__BYE__");
+
+    const n = teamIds.length;
+    const rounds = n - 1;
+
+    for (let r = 0; r < rounds; r++) {
+      for (let i = 0; i < n / 2; i++) {
+        const home = teamIds[i];
+        const away = teamIds[n - 1 - i];
+
+        if (home === "__BYE__" || away === "__BYE__") continue;
+
         fixtures.push({
-          id: `${group}-${a.entrantId}-${b.entrantId}`,
-          group,
-          homeId: a.entrantId,
-          awayId: b.entrantId,
-          roundLabel: "Group",
+          id: `${season}-${group}-R${r + 1}-${i + 1}`,
+          season,
+          stage: "Group",
+          round: r + 1,
+          roundLabel: `Round ${r + 1}`,
           stageLabel: "Group Stage",
-          scheduledAt: null,
+          group,
+
+          scheduledAt: null, // fill later if you want
+          homeId: String(home),
+          awayId: String(away),
+
           homeGoals: null,
           awayGoals: null,
+          notes: null,
         });
       }
+
+      // rotate (keep index 0 fixed)
+      // [A, B, C, D] -> [A, D, B, C] -> [A, C, D, B] ...
+      const fixed = teamIds[0];
+      const rest = teamIds.slice(1);
+      rest.unshift(rest.pop()!);
+      teamIds.splice(0, teamIds.length, fixed, ...rest);
     }
   });
 
   return fixtures;
-}
-
-/** Calculate standings from fixtures (3 win, 1 draw, 0 loss). */
-export function calculateStandings(
-  fixtures: Fixture[],
-  entrants: Entrant[],
-  grouped: GroupTeam[]
-): Standing[] {
-  const nameMap = new Map<string, string>();
-  entrants.forEach((e) => {
-    const name = e.club ? `${e.manager} (${e.club})` : e.manager;
-    nameMap.set(e.id, name);
-  });
-  const groupMap = new Map<string, string | null>();
-  grouped.forEach((g) => groupMap.set(g.entrantId, g.group));
-
-  const table = new Map<string, Standing>();
-
-  function ensureRow(teamId: string) {
-    if (!table.has(teamId)) {
-      table.set(teamId, {
-        teamId,
-        teamName: nameMap.get(teamId) ?? teamId,
-        group: groupMap.get(teamId) ?? null,
-        played: 0,
-        won: 0,
-        drawn: 0,
-        lost: 0,
-        goalsFor: 0,
-        goalsAgainst: 0,
-        points: 0,
-      });
-    }
-    return table.get(teamId)!;
-  }
-
-  fixtures.forEach((fx) => {
-    const { homeId, awayId, homeGoals, awayGoals } = fx;
-    if (homeGoals == null || awayGoals == null) return;
-
-    const h = ensureRow(homeId);
-    const a = ensureRow(awayId);
-
-    h.played += 1;
-    a.played += 1;
-    h.goalsFor += homeGoals;
-    h.goalsAgainst += awayGoals;
-    a.goalsFor += awayGoals;
-    a.goalsAgainst += homeGoals;
-
-    if (homeGoals > awayGoals) {
-      h.won += 1;
-      a.lost += 1;
-      h.points += 3;
-    } else if (homeGoals < awayGoals) {
-      a.won += 1;
-      h.lost += 1;
-      a.points += 3;
-    } else {
-      h.drawn += 1;
-      a.drawn += 1;
-      h.points += 1;
-      a.points += 1;
-    }
-  });
-
-  const rows = Array.from(table.values());
-  rows.sort((x, y) => {
-    // group, points desc, GD desc, goalsFor desc, name asc
-    const gx = x.group ?? "";
-    const gy = y.group ?? "";
-    if (gx !== gy) return gx.localeCompare(gy);
-    if (y.points !== x.points) return y.points - x.points;
-    const gdX = x.goalsFor - x.goalsAgainst;
-    const gdY = y.goalsFor - y.goalsAgainst;
-    if (gdY !== gdX) return gdY - gdX;
-    if (y.goalsFor !== x.goalsFor) return y.goalsFor - x.goalsFor;
-    return x.teamName.localeCompare(y.teamName);
-  });
-
-  return rows;
 }
