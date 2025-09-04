@@ -2,168 +2,111 @@
 "use client";
 
 import { useEffect, useState } from "react";
-
-// Types
-import type { Entrant, Fixture, GroupTeam, Standing } from "@/lib/types";
-
-// Lib
+import type { Entrant, Fixture, Standing } from "@/lib/types";
 import { load, save } from "@/lib/utils";
-import {
-  assignGroups,
-  calculateStandings,
-  generateFixtures,
-} from "@/lib/tournament";
-
-// UI/contexts
+import { assignGroups, calculateStandings, generateFixtures } from "@/lib/tournament";
 import { useAdmin } from "@/components/AdminGate";
 import { useSeason } from "@/components/SeasonContext";
+import { defaultSettings } from "@/lib/defaults";
 
 export default function HomePage() {
-  const { admin } = useAdmin();
-  const { season } = useSeason();
+  const SEASON = useSeason();
+  const isAdmin = useAdmin();
 
   const [entrants, setEntrants] = useState<Entrant[]>([]);
-  const [groups, setGroups] = useState<GroupTeam[]>([]);
+  const [groups, setGroups] = useState<any[]>([]);
   const [fixtures, setFixtures] = useState<Fixture[]>([]);
   const [standings, setStandings] = useState<Standing[]>([]);
 
-  const defaultSettings = { groupCount: 4 };
-
   useEffect(() => {
     (async () => {
-      // load requires 2 args: (key, fallback)
-      const savedEntrants = await load<Entrant[]>("entrants", []);
+      // Load entrants
+      const savedEntrants = await load<Entrant[]>("yc:entrants", SEASON);
       const es = savedEntrants ?? [];
       setEntrants(es);
 
-      if (es.length > 0) {
-        const groupTeams = assignGroups(es, { groupCount: defaultSettings.groupCount });
-        setGroups(groupTeams);
+      // Assign groups
+      const groupedTeams = assignGroups(es, { groupCount: defaultSettings.groupCount });
+      setGroups(groupedTeams);
 
-        const savedFixtures = await load<Fixture[]>("fixtures", []);
-        const fs =
-          savedFixtures && savedFixtures.length > 0
-            ? savedFixtures
-            : generateFixtures(groupTeams);
-        setFixtures(fs);
+      // Load fixtures
+      const savedFixtures = await load<Fixture[]>("yc:fixtures", SEASON);
+      const fs = savedFixtures ?? generateFixtures(groupedTeams, SEASON);
+      setFixtures(fs);
 
-        const sts = calculateStandings(groupTeams, fs);
-        setStandings(sts);
-      }
+      // Calculate standings
+      const st = calculateStandings(fs, groupedTeams);
+      setStandings(st);
     })();
-  }, []);
+  }, [SEASON]);
 
-  const handleSave = async () => {
-    await save("entrants", entrants);
-    await save("fixtures", fixtures);
-  };
-
-  // Helper to bucket standings by group for table rendering
-  const standingsByGroup = standings.reduce<Record<string, Standing[]>>(
-    (acc, s) => {
-      if (!acc[s.group]) acc[s.group] = [];
-      acc[s.group].push(s);
-      return acc;
-    },
-    {}
-  );
+  // ---- FIX: normalize group key so it's always a string ----
+  const standingsByGroup = standings.reduce<Record<string, Standing[]>>((acc, s) => {
+    const key = s.group ?? "Ungrouped";
+    (acc[key] ||= []).push(s);
+    return acc;
+  }, {});
 
   return (
-    <div className="p-6 space-y-6">
-      <h1 className="text-2xl font-bold">Youth Cup – Season {season}</h1>
+    <main className="p-8 space-y-6">
+      <header className="space-y-1">
+        <h1 className="text-3xl font-bold">Top 100 Youth Cup</h1>
+        <p className="text-gray-500">Season {SEASON}</p>
+      </header>
 
-      {admin && (
-        <div className="flex gap-4">
+      <section>
+        <h2 className="text-2xl font-semibold">Entrants</h2>
+        <ul className="list-disc ml-6">
+          {entrants.map((e) => (
+            <li key={e.id}>
+              {e.manager} {e.club ? `(${e.club})` : ""}
+            </li>
+          ))}
+        </ul>
+      </section>
+
+      <section>
+        <h2 className="text-2xl font-semibold">Fixtures</h2>
+        <ul className="list-disc ml-6">
+          {fixtures.map((f) => (
+            <li key={f.id}>
+              {f.homeName} vs {f.awayName} – {f.roundLabel || f.stageLabel}
+            </li>
+          ))}
+        </ul>
+      </section>
+
+      <section>
+        <h2 className="text-2xl font-semibold">Standings</h2>
+        {Object.entries(standingsByGroup).map(([group, sts]) => (
+          <div key={group} className="mb-4">
+            <h3 className="font-bold">Group {group}</h3>
+            <ul className="list-disc ml-6">
+              {sts.map((s) => (
+                <li key={s.teamId}>
+                  {s.teamName} – {s.points} pts
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))}
+      </section>
+
+      {isAdmin && (
+        <section>
+          <h2 className="text-2xl font-semibold">Admin Controls</h2>
           <button
-            onClick={handleSave}
+            onClick={async () => {
+              await save("yc:entrants", entrants, SEASON);
+              await save("yc:fixtures", fixtures, SEASON);
+              alert("Saved entrants & fixtures");
+            }}
             className="px-4 py-2 bg-blue-600 text-white rounded"
           >
             Save Data
           </button>
-        </div>
+        </section>
       )}
-
-      <section>
-        <h2 className="text-xl font-semibold">Groups</h2>
-        {groups.length === 0 ? (
-          <p className="text-sm text-gray-600">No groups yet.</p>
-        ) : (
-          <ul className="list-disc ml-6">
-            {groups.map((g, idx) => {
-              const e = entrants.find((x) => x.id === g.teamId);
-              return (
-                <li key={`${g.group}-${idx}`}>
-                  {g.group} – {e?.manager ?? "—"} {e?.club ? `(${e.club})` : ""}
-                </li>
-              );
-            })}
-          </ul>
-        )}
-      </section>
-
-      <section>
-        <h2 className="text-xl font-semibold">Fixtures</h2>
-        {fixtures.length === 0 ? (
-          <p className="text-sm text-gray-600">No fixtures yet.</p>
-        ) : (
-          <ul className="list-disc ml-6">
-            {fixtures.map((fx) => (
-              <li key={fx.id}>
-                {fx.stageLabel ?? fx.stage ?? "Stage"} – {fx.homeId} vs {fx.awayId}
-                {fx.homeGoals != null && fx.awayGoals != null
-                  ? ` (${fx.homeGoals}–${fx.awayGoals})`
-                  : ""}
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-
-      <section>
-        <h2 className="text-xl font-semibold">Standings</h2>
-        {Object.keys(standingsByGroup).length === 0 ? (
-          <p className="text-sm text-gray-600">No standings yet.</p>
-        ) : (
-          Object.entries(standingsByGroup).map(([g, rows]) => (
-            <div key={g} className="mb-4">
-              <h3 className="font-bold">Group {g}</h3>
-              <table className="min-w-full border border-gray-300">
-                <thead>
-                  <tr className="bg-gray-100">
-                    <th className="px-2 py-1 border">Team</th>
-                    <th className="px-2 py-1 border">P</th>
-                    <th className="px-2 py-1 border">W</th>
-                    <th className="px-2 py-1 border">D</th>
-                    <th className="px-2 py-1 border">L</th>
-                    <th className="px-2 py-1 border">GF</th>
-                    <th className="px-2 py-1 border">GA</th>
-                    <th className="px-2 py-1 border">Pts</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {rows.map((s) => {
-                    const e = entrants.find((x) => x.id === s.teamId);
-                    return (
-                      <tr key={s.teamId}>
-                        <td className="border px-2 py-1">
-                          {e?.manager ?? "—"} {e?.club ? `(${e.club})` : ""}
-                        </td>
-                        <td className="border px-2 py-1">{s.played}</td>
-                        <td className="border px-2 py-1">{s.won}</td>
-                        <td className="border px-2 py-1">{s.drawn}</td>
-                        <td className="border px-2 py-1">{s.lost}</td>
-                        <td className="border px-2 py-1">{s.goalsFor}</td>
-                        <td className="border px-2 py-1">{s.goalsAgainst}</td>
-                        <td className="border px-2 py-1 font-bold">{s.points}</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          ))
-        )}
-      </section>
-    </div>
+    </main>
   );
 }
