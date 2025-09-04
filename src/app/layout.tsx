@@ -1,16 +1,23 @@
-// Root layout required by Next.js App Router
+import type { Metadata } from "next";
 import "./globals.css";
+import SiteHeader from "@/components/SiteHeader";
+import SiteFooter from "@/components/SiteFooter";
 
-export const metadata = {
+export const metadata: Metadata = {
   title: "Top 100 Youth Cup",
-  description: "S26",
+  description: "Season 26 · Fixtures, standings and prize draw",
+  icons: { icon: "/favicon.ico" },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      <body className="bg-gray-50 text-gray-900">
-        <main className="max-w-3xl mx-auto px-6 py-12">{children}</main>
+      <body className="min-h-screen text-white bg-pitch">
+        <SiteHeader />
+        <main className="mx-auto max-w-6xl px-4 sm:px-6 py-10">
+          {children}
+        </main>
+        <SiteFooter />
       </body>
     </html>
   );
