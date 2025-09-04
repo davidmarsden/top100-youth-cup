@@ -1,61 +1,67 @@
-"use client";
+'use client';
 
-import { useEffect, useState } from "react";
-import { defaultSettings } from "@/lib/defaults";
-import { Entrant, Fixture, Standing, GroupTeam } from "@/lib/types";
-import { load, save } from "@/lib/utils";
-import {
-  assignGroups,
-  calculateStandings,
-  createFixtures,
-} from "@/lib/tournament";
+import React, { useEffect, useState } from 'react';
+import { defaultSettings } from '@/lib/defaults';
+import { Entrant, Fixture, Standing, Settings } from '@/lib/types';
+import { load, save } from '@/lib/utils';
+import { assignGroups, calculateStandings, generateFixtures } from '@/lib/tournament';
+import { useAdmin } from '@/components/AdminGate';
+import { useSeason } from '@/components/SeasonContext';
 
-export default function HomePage() {
+export default function Page() {
+  const { admin } = useAdmin();
+  const { season } = useSeason();
+
   const [entrants, setEntrants] = useState<Entrant[]>([]);
+  const [groups, setGroups] = useState<Record<string, Entrant[]>>({});
   const [fixtures, setFixtures] = useState<Fixture[]>([]);
   const [standings, setStandings] = useState<Standing[]>([]);
-  const [groups, setGroups] = useState<GroupTeam[][]>([]);
-  const [loading, setLoading] = useState(true);
+  const [settings] = useState<Settings>(defaultSettings);
 
+  // Load saved data
   useEffect(() => {
-    async function init() {
-      setLoading(true);
-
-      // Load entrants
-      const savedEntrants = await load<Entrant[]>("entrants");
+    (async () => {
+      const savedEntrants = await load<Entrant[]>(season, 'entrants');
       const es = savedEntrants ?? [];
       setEntrants(es);
 
-      // Assign groups
       const groupTeams = assignGroups(es, defaultSettings.groupCount);
       setGroups(groupTeams);
 
-      // Load fixtures
-      const savedFixtures = await load<Fixture[]>("fixtures");
-      if (savedFixtures && savedFixtures.length > 0) {
-        setFixtures(savedFixtures);
-      } else {
-        const fs = createFixtures(groupTeams);
-        setFixtures(fs);
-        await save("fixtures", fs);
-      }
+      const savedFixtures = await load<Fixture[]>(season, 'fixtures');
+      setFixtures(savedFixtures ?? []);
 
-      // Calculate standings
-      const st = calculateStandings(savedFixtures ?? []);
-      setStandings(st);
+      const savedStandings = await load<Standing[]>(season, 'standings');
+      setStandings(savedStandings ?? []);
+    })();
+  }, [season]);
 
-      setLoading(false);
-    }
-    init();
-  }, []);
+  const doDraw = async () => {
+    const groupTeams = assignGroups(entrants, settings.groupCount);
+    setGroups(groupTeams);
 
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        Loading…
-      </div>
-    );
-  }
+    const newFixtures = generateFixtures(groupTeams, season);
+    setFixtures(newFixtures);
+
+    await save(season, 'entrants', entrants);
+    await save(season, 'groups', groupTeams);
+    await save(season, 'fixtures', newFixtures);
+
+    const newStandings = calculateStandings(newFixtures);
+    setStandings(newStandings);
+    await save(season, 'standings', newStandings);
+  };
+
+  const clearEntrants = async () => {
+    setEntrants([]);
+    setGroups({});
+    setFixtures([]);
+    setStandings([]);
+    await save(season, 'entrants', []);
+    await save(season, 'groups', {});
+    await save(season, 'fixtures', []);
+    await save(season, 'standings', []);
+  };
 
   const byGroup: Record<string, Standing[]> = {};
   standings.forEach((s) => {
@@ -64,52 +70,62 @@ export default function HomePage() {
   });
 
   return (
-    <main className="max-w-5xl mx-auto p-6">
-      <h1 className="text-3xl font-bold mb-6">Youth Cup — Groups</h1>
+    <div className="p-4">
+      <h1 className="text-2xl font-bold mb-4">Youth Cup {season}</h1>
 
-      {Object.keys(byGroup).map((g) => (
-        <div key={g} className="mb-10">
-          <h2 className="text-xl font-semibold mb-2">Group {g}</h2>
-          <div className="overflow-x-auto">
-            <table className="w-full border-collapse">
+      {admin && (
+        <div className="flex gap-2 mb-4">
+          <button className="btn" onClick={doDraw}>
+            Draw Groups
+          </button>
+          <button className="btn border-red-400" onClick={clearEntrants}>
+            Clear Entrants
+          </button>
+        </div>
+      )}
+
+      <div className="grid md:grid-cols-2 gap-4">
+        {Object.keys(byGroup).map((g) => (
+          <div key={g} className="border rounded p-2">
+            <h2 className="font-semibold mb-2">Group {g}</h2>
+            <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-white/20 text-left">
-                  <th className="py-1 pr-2">Team</th>
-                  <th className="py-1 pr-2 text-center">P</th>
-                  <th className="py-1 pr-2 text-center">W</th>
-                  <th className="py-1 pr-2 text-center">D</th>
-                  <th className="py-1 pr-2 text-center">L</th>
-                  <th className="py-1 pr-2 text-center">GF</th>
-                  <th className="py-1 pr-2 text-center">GA</th>
-                  <th className="py-1 pr-2 text-center">GD</th>
-                  <th className="py-1 pr-2 text-center">Pts</th>
+                <tr>
+                  <th className="text-left">Team</th>
+                  <th>P</th>
+                  <th>W</th>
+                  <th>D</th>
+                  <th>L</th>
+                  <th>GF</th>
+                  <th>GA</th>
+                  <th>GD</th>
+                  <th>Pts</th>
                 </tr>
               </thead>
               <tbody>
                 {byGroup[g].map((s) => {
-                  const e = entrants.find((x) => x.id === s.teamId);
+                  const e = entrants.find((x) => x.id === s.entrantId);
                   return (
-                    <tr
-                      key={s.teamId}
-                      className="border-t border-white/10"
-                    >
-                      <td className="py-1 pr-2">{e ? e.name : "Unknown"}</td>
-                      <td className="py-1 pr-2 text-center">{s.played}</td>
-                      <td className="py-1 pr-2 text-center">{s.wins}</td>
-                      <td className="py-1 pr-2 text-center">{s.draws}</td>
-                      <td className="py-1 pr-2 text-center">{s.losses}</td>
-                      <td className="py-1 pr-2 text-center">{s.goalsFor}</td>
-                      <td className="py-1 pr-2 text-center">{s.goalsAgainst}</td>
-                      <td className="py-1 pr-2 text-center">{s.goalDifference}</td>
-                      <td className="py-1 pr-2 text-center font-semibold">{s.points}</td>
+                    <tr key={s.entrantId} className="border-b last:border-0">
+                      <td className="py-1 pr-2">
+                        {e ? e.club ?? e.manager ?? e.id : s.entrantId}
+                      </td>
+                      <td className="py-1 text-right">{s.played}</td>
+                      <td className="py-1 text-right">{s.won}</td>
+                      <td className="py-1 text-right">{s.drawn}</td>
+                      <td className="py-1 text-right">{s.lost}</td>
+                      <td className="py-1 text-right">{s.goalsFor}</td>
+                      <td className="py-1 text-right">{s.goalsAgainst}</td>
+                      <td className="py-1 text-right">{s.goalDifference}</td>
+                      <td className="py-1 text-right font-semibold">{s.points}</td>
                     </tr>
                   );
                 })}
               </tbody>
             </table>
           </div>
-        </div>
-      ))}
-    </main>
+        ))}
+      </div>
+    </div>
   );
 }
