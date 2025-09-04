@@ -3,6 +3,12 @@ import "./globals.css";
 import SiteHeader from "@/components/SiteHeader";
 import SiteFooter from "@/components/SiteFooter";
 
+import { Bebas_Neue, Inter } from "next/font/google";
+const display = Bebas_Neue({ subsets: ["latin"], weight: "400", variable: "--font-display" });
+const inter = Inter({ subsets: ["latin"], variable: "--font-body" });
+…
+<body className={`${display.variable} ${inter.variable} …`}>
+
 export const metadata: Metadata = {
   title: "Top 100 Youth Cup",
   description: "Season 26 · Fixtures, standings and prize draw",
