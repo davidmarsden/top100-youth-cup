@@ -1,8 +1,7 @@
 import { Bebas_Neue, Inter } from "next/font/google";
 const display = Bebas_Neue({ subsets: ["latin"], weight: "400", variable: "--font-display" });
 const inter = Inter({ subsets: ["latin"], variable: "--font-body" });
-…
-<body className={`${display.variable} ${inter.variable} …`}>
+
 
 
 import type { Metadata } from "next";
