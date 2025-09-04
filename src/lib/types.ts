@@ -1,34 +1,29 @@
-// src/lib/types.ts
-
-// An Entrant is a team/club in the tournament
 export interface Entrant {
-  id: string;
-  season: string;
-  manager?: string;
-  club?: string | null;
-  seed?: string | null;
+  id: string;               // unique identifier
+  season: string;           // season code (e.g. "S26")
+  manager?: string;         // manager name (optional)
+  club?: string | null;     // club name (optional)
+  seed?: string | null;     // seed info (optional)
 }
 
-// A Fixture is a scheduled match
 export interface Fixture {
-  id: string;
-  season: string;
-  stage: string | null;
-  round: string | null;
-  round_label: string | null;
-  stage_label: string | null;
-  group: string | null;
-  kickoff: string | null; // ✅ replaces scheduledAt
-  homeId: string | null;
-  awayId: string | null;
-  homeGoals: number | null;
-  awayGoals: number | null;
+  id: string;               // unique fixture id
+  season: string;           // season code
+  stage?: string | null;    // stage of tournament (e.g. "Group", "Quarter")
+  round?: string | null;    // round number / label
+  round_label?: string | null;
+  stage_label?: string | null;
+  group?: string | null;    // group letter (A, B, C…)
+  scheduledAt?: string | null; // ISO string for kickoff time
+  homeId: string;           // entrantId of home team
+  awayId: string;           // entrantId of away team
+  homeGoals?: number | null;
+  awayGoals?: number | null;
 }
 
-// A Standing is a row in the group table
 export interface Standing {
-  entrantId: string;
-  group: string; // ✅ added so byGroup[...] works
+  entrantId: string;        // links back to Entrant.id
+  group: string;            // group letter
   played: number;
   won: number;
   drawn: number;
@@ -39,14 +34,8 @@ export interface Standing {
   points: number;
 }
 
-// A GroupTeam is an Entrant assigned into a group
-export interface GroupTeam {
-  entrantId: string;
-  group: string;
-}
-
-// Settings for tournament configuration
 export interface Settings {
-  season: string;
-  groupCount: number;
+  groupCount: number;       // number of groups
+  teamsPerGroup: number;    // teams in each group
+  advancePerGroup: number;  // number of teams advancing per group
 }
