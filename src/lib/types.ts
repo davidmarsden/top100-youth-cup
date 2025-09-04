@@ -1,44 +1,38 @@
-// src/lib/types.ts
-export interface Entrant {
+// Central, minimal types we actually use on the homepage
+
+export type Entrant = {
   id: string;
   manager: string;
   club?: string | null;
-  rating?: number | null;
-}
+};
 
-export interface GroupTeam {
-  group: string;       // "A", "B", ...
-  entrantId: string;   // Entrant.id
-  manager: string;     // copied from Entrant for easy rendering
-  club?: string | null;
-}
+export type GroupKey = string; // e.g. "A", "B" ...
+export type GroupsByKey = Record<GroupKey, Entrant[]>;
 
-export interface Fixture {
+export type Fixture = {
   id: string;
-  group: string;                 // group the fixture belongs to
-  homeId: string;                // Entrant.id
-  awayId: string;                // Entrant.id
-  roundLabel?: string | null;
-  stageLabel?: string | null;
-  scheduledAt?: string | null;   // ISO or null
+  group: GroupKey | null;
+  round: number | null;
+  scheduledAt: string | null; // ISO
+  homeId: string;
+  awayId: string;
   homeGoals?: number | null;
   awayGoals?: number | null;
-}
+};
 
-export interface Standing {
-  teamId: string;         // Entrant.id
-  teamName: string;       // Entrant.manager (optionally + club)
-  group: string | null;   // "A" | "B" | ... | null
+export type Standing = {
+  teamId: string;
+  group: GroupKey | null;
   played: number;
-  won: number;
-  drawn: number;
-  lost: number;
-  goalsFor: number;
-  goalsAgainst: number;
+  wins: number;
+  draws: number;
+  losses: number;
+  gf: number;
+  ga: number;
+  gd: number;
   points: number;
-}
+};
 
-export interface Settings {
-  season: string;       // display only (no logic needed)
-  groupCount: number;   // how many groups to create
-}
+export type Settings = {
+  groupCount: number;
+};
