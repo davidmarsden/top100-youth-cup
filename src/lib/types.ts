@@ -1,102 +1,66 @@
 // src/lib/types.ts
 
-// --- Basic shared types ---
-export type SeasonCode = string;
-
-// --- Settings used across the app (draw, standings, etc.) ---
-export interface Settings {
-  season: SeasonCode;
-
-  // Competition / table rules
-  pointsWin: number;   // e.g. 3
-  pointsDraw: number;  // e.g. 1
-  pointsLoss: number;  // e.g. 0
-  allowDraws: boolean; // e.g. true in group stage, false in KO
-
-  // Group configuration
-  maxGroupSize: number; // e.g. 6
-  groupCount: number;   // e.g. 8
-
-  // Misc env / formatting
-  timezone: string;     // e.g. 'Europe/London'
-  ageCutoffISO: string; // e.g. '2024-09-01'
-}
-
-// --- Entrants / Teams ---
-export interface Entrant {
+// Entrants in the tournament (clubs/managers that register)
+export type Entrant = {
   id: string;
-  name: string;
-  manager?: string | null;
+  season: string;
+  manager: string;
+  club?: string | null;       // ✅ club name added
   seed?: number | null;
-  // Group is optional because many flows assign it later
-  group?: string | null;
-}
+};
 
-// Team in a named group
-export interface GroupTeam {
-  entrantId: string;
-  group: string; // e.g. 'A', 'B', ...
-}
-
-// --- Fixtures (matches) ---
-export interface Fixture {
+// A fixture (match) in the tournament
+export type Fixture = {
   id: string;
-
-  // Season + stage + round info
-  season: SeasonCode;
-  stage: 'groups' | string;  // 'groups' or knockout identifiers like 'youth_cup'
-  round?: number | null;
+  season: string;
+  stage: 'groups' | 'youth_cup' | 'youth_shield' | string;
+  round: number | null;
   round_label?: string | null;
   stage_label?: string | null;
-
-  // ✅ Added: group label for group-stage fixtures (e.g., 'A', 'B', ...)
-  group?: string | null;
-
-  // Scheduling
-  kickoff?: string | null;   // ISO string (maps from DB scheduled_at)
-
-  // Participants
-  homeId: string;            // entrant id
-  awayId: string;            // entrant id
-
-  // Result (nullable until played)
+  group?: string | null;          // ✅ added group support
+  scheduledAt?: string | null;    // ✅ camelCase field for match datetime
+  homeId: string | null;
+  awayId: string | null;
   homeGoals?: number | null;
   awayGoals?: number | null;
-}
+};
 
-// --- Group standings row ---
-export interface Standing {
+// Grouped team (entrants inside a group)
+export type GroupTeam = {
+  group: string;
   entrantId: string;
-  group: string;      // 'A', 'B', etc.
+};
+
+// A standing in a group table
+export type Standing = {
+  entrantId: string;   // ✅ now matches how you search in page.tsx
+  points: number;
   played: number;
   won: number;
   drawn: number;
   lost: number;
   goalsFor: number;
   goalsAgainst: number;
-  goalDiff: number;
-  points: number;
-}
+  goalDifference: number;
+};
 
-// --- Knockout bracket seed data ---
-export interface KO {
-  // Labelled slots, like "1A", "2C", etc.
-  slots: string[];
-
-  // Seeded pairs for R32 draw etc.
-  seededPairs: [string, string][];
-
-  // Optional computed pairs list if you also store resolved pairings
-  pairs?: [string, string][];
-}
-
-// --- Utility map type ---
-export type NamedMap<T> = { [key: string]: T };
-export type Entrant = {
-  id: string;
+// General tournament settings
+export type Settings = {
   season: string;
-  manager: string;
-  // NEW:
-  club?: string | null; // display name used in fixtures page
-  // ...any other fields you already have (seed, group, etc.)
+  groupCount: number;   // ✅ added so assignGroups works
+};
+
+// Draw entries (for random prize draw)
+export type DrawEntry = {
+  id: string;
+  entrantId: string;
+  createdAt: string;
+};
+
+// Saved draw result (for persistence + theatrical draw)
+export type DrawResult = {
+  id: string;
+  entrantId: string;
+  createdAt: string;
+  winner: boolean;
 };
