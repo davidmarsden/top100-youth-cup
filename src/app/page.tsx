@@ -93,8 +93,8 @@ export default function HomePage() {
           <p className="text-sm text-gray-600">No groups yet.</p>
         ) : (
           <ul className="list-disc ml-6">
-            {groups.map((g) => (
-              <li key={`${g.group}-${g.teamId}`}>
+            {groups.map((g, idx) => (
+              <li key={`${g.group}-${idx}`}>
                 {g.group} – {g.manager} {g.club ? `(${g.club})` : ""}
               </li>
             ))}
