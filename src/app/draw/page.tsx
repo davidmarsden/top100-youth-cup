@@ -1,202 +1,209 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
-import { load, save } from "@/lib/utils";
-import type { DrawRecord } from "@/lib/types";
 
-// Hard-coded eligible managers for this draw (as provided)
-const ELIGIBLE: string[] = [
-  "Walter Gogh",
-  "Heath Brown",
-  "Chris Taylor",
-  "Gav Harmer",
-  "Adam",
-  "Bojan",
-  "Yamil Mc02",
-  "Hugo Costa",
-  "James McKenzie",
-  "Carl Martin",
-  "Ash L",
-  "Chris Meida",
-  "Dario Saviano",
-  "Chris Baggio",
-  "Glen Mullan",
-  "David Marsden",
-  "Regan Thompson",
-  "Doug Earle",
-  "Marco G",
-  "Steven Allington",
-  "Dan Wallace",
-  "Simon Thomas",
-  "Jay Jones (Gladbach, now Monaco)",
-  "Ricardo Ferreira",
-  "Scott Mckenzie",
-  "Paul Masters",
-  "Mr TRX",
-  "Pedro Vilar",
-  "Neil Frankland",
-  "Fredrik Johansson (Wolfsburg, now Sporting)",
-];
-
-// Simple cryptographically-strong picker
-function pickRandom<T>(arr: T[]): T {
-  if (arr.length === 0) throw new Error("Empty pool");
-  const buf = new Uint32Array(1);
-  crypto.getRandomValues(buf);
-  const idx = buf[0] % arr.length;
-  return arr[idx]!;
-}
-
-// In future we’ll compute eligibility from forfeits.
-// Keep a single place to flip that logic.
-function isEligible(name: string): boolean {
-  return ELIGIBLE.includes(name);
-}
-
-const HISTORY_KEY = "yc:draw-history";
+type ApiResponse = { season: string; winners: string[]; at: string | null };
 
 export default function PrizeDrawPage() {
-  const [pool, setPool] = useState<string[]>([]);
-  const [lastWinner, setLastWinner] = useState<string | null>(null);
-  const [history, setHistory] = useState<DrawRecord[]>([]);
+  const [season, setSeason] = useState<string>("26");
+  const [loaded, setLoaded] = useState(false);
+  const [winners, setWinners] = useState<string[]>([]);
+  const [revealed, setRevealed] = useState<number>(0); // 0..3
+  const [at, setAt] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  // Bootstrap pool + history
+  // Fetch results (public)
+  async function fetchResults() {
+    setError(null);
+    const res = await fetch("/api/draw", { cache: "no-store" });
+    if (!res.ok) {
+      setError("Failed to load results.");
+      return;
+    }
+    const data: ApiResponse = await res.json();
+    setSeason(data.season);
+    setWinners(data.winners ?? []);
+    setAt(data.at ?? null);
+    setLoaded(true);
+  }
+
   useEffect(() => {
-    (async () => {
-      const hist = (await load<DrawRecord[]>(HISTORY_KEY)) ?? [];
-      setHistory(hist);
-      setPool(ELIGIBLE.filter(isEligible));
-    })();
+    fetchResults();
   }, []);
 
-  const remaining = useMemo(() => {
-    if (history.length === 0) return pool;
-    // Allow repeats across draws but show what's still un-won this session.
-    const winners = new Set(history.map(h => h.winner));
-    return pool.filter(p => !winners.has(p));
-  }, [pool, history]);
+  // Public reveal: flip 3 cards with a little drama
+  const startReveal = async () => {
+    if (winners.length !== 3) return;
+    setRevealed(0);
+    const step = async (i: number) =>
+      new Promise<void>((r) => setTimeout(() => r(), i === 0 ? 800 : 1000));
+    for (let i = 0; i < 3; i++) {
+      await step(i);
+      setRevealed((n) => Math.min(3, n + 1));
+    }
+  };
 
-  const draw = async () => {
-    if (busy) return;
-    if (pool.length === 0) return;
-
+  // Admin: trigger the draw on the server (only once)
+  const runDraw = async () => {
+    const adminKey = window.prompt("Enter admin key to run the draw:");
+    if (!adminKey) return;
     setBusy(true);
+    setError(null);
     try {
-      const entries = pool.slice();
-      const winner = pickRandom(entries);
-
-      const rec: DrawRecord = {
-        id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-        at: new Date().toISOString(),
-        entries,
-        winner,
-        seed: null, // placeholder for future seeded draws
-      };
-
-      const nextHistory = [rec, ...history];
-      setHistory(nextHistory);
-      setLastWinner(winner);
-      await save(HISTORY_KEY, nextHistory);
+      const res = await fetch("/api/draw", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ adminKey }),
+      });
+      if (res.status === 409) {
+        setError("Draw already completed.");
+      } else if (!res.ok) {
+        const txt = await res.text();
+        setError(`Failed to run draw: ${txt}`);
+      } else {
+        const data: ApiResponse = await res.json();
+        setWinners(data.winners ?? []);
+        setAt(data.at ?? null);
+        setRevealed(0);
+      }
     } finally {
       setBusy(false);
     }
   };
 
-  const clearHistory = async () => {
-    setHistory([]);
-    setLastWinner(null);
-    await save(HISTORY_KEY, []);
-  };
+  const canReveal = winners.length === 3;
 
   return (
     <>
+      <style
+        // Small CSS for the card flip + confetti without extra libs
+        dangerouslySetInnerHTML={{
+          __html: `
+        @keyframes pop { 0%{transform:scale(.9);opacity:.2} 60%{transform:scale(1.05)} 100%{transform:scale(1);opacity:1} }
+        @keyframes float { 0%{transform:translateY(0)} 100%{transform:translateY(-12px)} }
+        .card {
+          transition: transform .5s ease, box-shadow .5s ease;
+          transform-style: preserve-3d;
+        }
+        .card.revealed { transform: rotateX(0deg) scale(1); animation: pop .4s ease; }
+        .card.cover { transform: rotateX(180deg); }
+        .spark { animation: float 1.2s ease-in-out infinite alternate; }
+      `,
+        }}
+      />
       <header className="space-y-1 mb-8">
         <h1 className="text-3xl font-bold">Prize Draw</h1>
-        <p className="text-sm text-gray-500">Instant draw from eligible managers</p>
+        <p className="text-sm text-gray-500">
+          Season {season} • Three winners • Publicly viewable
+        </p>
         <p className="text-xs text-gray-500">
-          <Link href="/" className="underline">← Back to Home</Link>
+          <Link href="/" className="underline">
+            ← Back to Home
+          </Link>
         </p>
       </header>
 
-      <div className="grid gap-8 md:grid-cols-2">
-        {/* Left: Controls + Live result */}
-        <section className="space-y-4">
-          <div className="p-4 rounded-lg bg-white shadow-sm border">
-            <h2 className="text-lg font-semibold">Draw a Winner</h2>
-            <p className="text-sm text-gray-600">
-              Pool size: <strong>{pool.length}</strong> • Remaining (not yet drawn this session):{" "}
-              <strong>{remaining.length}</strong>
-            </p>
+      {/* Controls */}
+      <div className="mb-6 flex flex-wrap gap-3 items-center">
+        <button
+          onClick={fetchResults}
+          className="px-3 py-2 rounded bg-gray-200 hover:bg-gray-300"
+        >
+          Refresh
+        </button>
 
-            <div className="mt-4 flex gap-2">
-              <button
-                onClick={draw}
-                disabled={busy || pool.length === 0}
-                className="px-4 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
-              >
-                {busy ? "Drawing…" : "Pick winner"}
-              </button>
-              <button
-                onClick={clearHistory}
-                className="px-4 py-2 rounded bg-gray-200 hover:bg-gray-300"
-              >
-                Clear history
-              </button>
-            </div>
+        <button
+          onClick={startReveal}
+          disabled={!canReveal}
+          className="px-4 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
+        >
+          Show results
+        </button>
 
-            <div className="mt-6">
-              <p className="text-sm text-gray-500">Last winner</p>
-              <p className="text-2xl font-bold">{lastWinner ?? "—"}</p>
-            </div>
-          </div>
+        <button
+          onClick={runDraw}
+          disabled={busy}
+          className="px-3 py-2 rounded bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50"
+          title="Admin only"
+        >
+          {busy ? "Running…" : "Run draw (admin)"}
+        </button>
 
-          <div className="p-4 rounded-lg bg-white shadow-sm border">
-            <h3 className="text-md font-semibold mb-2">Eligible managers</h3>
-            <ul className="list-disc ml-6 text-sm">
-              {pool.map(name => (
-                <li key={name}>{name}</li>
-              ))}
-            </ul>
-          </div>
-        </section>
-
-        {/* Right: History */}
-        <section className="space-y-3">
-          <div className="p-4 rounded-lg bg-white shadow-sm border">
-            <h2 className="text-lg font-semibold">Draw history</h2>
-            {history.length === 0 ? (
-              <p className="text-sm text-gray-500">No draws yet.</p>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="min-w-[520px] text-sm">
-                  <thead className="text-left text-gray-500">
-                    <tr>
-                      <th className="pr-4">When</th>
-                      <th className="pr-4">Winner</th>
-                      <th className="pr-4">Pool size</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {history.map(h => (
-                      <tr key={h.id}>
-                        <td className="pr-4">{new Date(h.at).toLocaleString()}</td>
-                        <td className="pr-4 font-medium">{h.winner}</td>
-                        <td className="pr-4">{h.entries.length}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-          <p className="text-xs text-gray-500">
-            Future-ready: eligibility will be computed from forfeits; this page already
-            centralizes that check in <code>isEligible()</code>.
-          </p>
-        </section>
+        {at && (
+          <span className="text-xs text-gray-500">
+            Drawn: {new Date(at).toLocaleString()}
+          </span>
+        )}
       </div>
+
+      {error && (
+        <div className="mb-6 p-3 rounded bg-red-100 text-red-800 text-sm">
+          {error}
+        </div>
+      )}
+
+      {/* Theatre: three flipping cards */}
+      <section className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        {[0, 1, 2].map((i) => {
+          const show = revealed > i && winners[i];
+          const name = winners[i] ?? "—";
+          return (
+            <div
+              key={i}
+              className="relative h-40 sm:h-48 perspective-1000 select-none"
+            >
+              <div
+                className={`card absolute inset-0 rounded-xl border bg-white shadow-sm grid place-items-center text-center ${
+                  show ? "revealed" : "cover"
+                }`}
+                style={{
+                  backfaceVisibility: "hidden",
+                }}
+              >
+                {show ? (
+                  <div className="p-3">
+                    <div className="text-xs text-gray-500 mb-1">Winner #{i + 1}</div>
+                    <div className="text-xl sm:text-2xl font-bold">{name}</div>
+                    {/* simple confetti-ish sparks */}
+                    <div className="mt-2 text-lg">
+                      <span className="spark inline-block mx-1">🎉</span>
+                      <span
+                        className="spark inline-block mx-1"
+                        style={{ animationDelay: ".2s" }}
+                      >
+                        🎊
+                      </span>
+                      <span
+                        className="spark inline-block mx-1"
+                        style={{ animationDelay: ".4s" }}
+                      >
+                        🥳
+                      </span>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="opacity-70">
+                    <div className="text-sm text-gray-500">Winner #{i + 1}</div>
+                    <div className="text-3xl">?</div>
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </section>
+
+      {/* Helper text */}
+      {!loaded && (
+        <p className="mt-6 text-sm text-gray-500">Loading results…</p>
+      )}
+      {loaded && winners.length === 0 && (
+        <p className="mt-6 text-sm text-gray-500">
+          No winners yet. An admin must run the draw once using the button above.
+        </p>
+      )}
     </>
   );
 }
