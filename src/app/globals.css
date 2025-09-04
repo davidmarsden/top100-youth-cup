@@ -2,6 +2,10 @@
 @tailwind components;
 @tailwind utilities;
 
+:root { --font-display: Bebas Neue, system-ui, sans-serif; --font-body: Inter, system-ui, sans-serif; }
+body { font-family: var(--font-body); }
+h1, h2, .display { font-family: var(--font-display); letter-spacing: .5px; }
+
 :root{
   --brand-navy:#0d2b6f;       /* deep navy (logo) */
   --brand-blue:#1e88e5;       /* royal/sky */
