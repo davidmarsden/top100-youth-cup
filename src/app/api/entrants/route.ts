@@ -1,44 +1,80 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { supabase } from '@/server/supabase';
+// src/app/api/entrants/route.ts
+import { NextResponse } from 'next/server';
+import { createClient } from '@supabase/supabase-js';
+import type { Entrant } from '@/lib/types';
 
-async function getSeasonByCode(code: string) {
-  const { data, error } = await supabase!.from('seasons').select('*').eq('code', code).single();
-  if (error || !data) throw new Error(error?.message || 'Season not found');
-  return data;
+// Map DB (snake_case) → API (camelCase)
+function toCamelEntrant(r: any): Entrant {
+  return {
+    id: String(r.id),
+    season: String(r.season),
+    manager: r.manager ?? '',
+    club: r.club ?? null,       // ✅ make sure club is surfaced
+    seed: r.seed ?? null,
+  };
 }
 
-export async function GET(req: NextRequest) {
-  if (!supabase) return NextResponse.json({ entrants: [] }); // local mode
-  const { searchParams } = new URL(req.url);
-  const code = searchParams.get('season') || 'S26';
-  const season = await getSeasonByCode(code);
-  const { data, error } = await supabase.from('entrants').select('*').eq('season_id', season.id).order('created_at', { ascending: true });
-  if (error) return NextResponse.json({ error: error.message }, { status: 400 });
-  return NextResponse.json({ entrants: data });
+// Create a server-side Supabase client
+function supabaseServer() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+  const key =
+    process.env.SUPABASE_SERVICE_ROLE_KEY ??
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+  return createClient(url, key);
 }
 
-export async function POST(req: NextRequest) {
-  if (!supabase) return NextResponse.json({ error: 'Supabase not configured' }, { status: 400 });
-  const body = await req.json(); // { season, manager, club, rating? }
-  const code = body.season || 'S26';
-  const season = await getSeasonByCode(code);
-  const { data, error } = await supabase.from('entrants').insert({
-    season_id: season.id,
-    manager: body.manager,
-    club: body.club,
-    rating: body.rating ?? null,
-    email: body.email ?? null
-  }).select('*').single();
-  if (error) return NextResponse.json({ error: error.message }, { status: 400 });
-  return NextResponse.json({ entrant: data });
-}
+// GET /api/entrants?season=S26  (season is optional)
+export async function GET(request: Request) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const seasonParam = searchParams.get('season');
 
-export async function DELETE(req: NextRequest) {
-  if (!supabase) return NextResponse.json({ error: 'Supabase not configured' }, { status: 400 });
-  const { searchParams } = new URL(req.url);
-  const code = searchParams.get('season') || 'S26';
-  const season = await getSeasonByCode(code);
-  const { error } = await supabase.from('entrants').delete().eq('season_id', season.id);
-  if (error) return NextResponse.json({ error: error.message }, { status: 400 });
-  return NextResponse.json({ ok: true });
+    // Fallbacks if no season param supplied
+    const season =
+      seasonParam ??
+      process.env.NEXT_PUBLIC_DEFAULT_SEASON ??
+      process.env.DEFAULT_SEASON ??
+      'S26';
+
+    const supabase = supabaseServer();
+
+    // Expecting a table like:
+    // entrants(id uuid/text, season text, manager text, club text, seed int, ...)
+    let query = supabase
+      .from('entrants')
+      .select(
+        `
+        id,
+        season,
+        manager,
+        club,
+        seed
+      `
+      )
+      .order('seed', { ascending: true, nullsFirst: false })
+      .order('manager', { ascending: true });
+
+    // Filter by season if provided/derived
+    if (season) {
+      query = query.eq('season', season);
+    }
+
+    const { data, error } = await query;
+
+    if (error) {
+      return NextResponse.json(
+        { error: error.message },
+        { status: 500 }
+      );
+    }
+
+    const entrants: Entrant[] = (data ?? []).map(toCamelEntrant);
+
+    return NextResponse.json({ season, entrants });
+  } catch (err: any) {
+    return NextResponse.json(
+      { error: err?.message ?? 'Unexpected error' },
+      { status: 500 }
+    );
+  }
 }
