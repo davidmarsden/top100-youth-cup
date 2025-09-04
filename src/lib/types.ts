@@ -36,3 +36,12 @@ export type Standing = {
 export type Settings = {
   groupCount: number;
 };
+
+// --- Prize draw types ---
+export type DrawRecord = {
+  id: string;           // uuid-ish
+  at: string;           // ISO timestamp
+  entries: string[];    // pool used for this draw
+  winner: string;       // selected manager
+  seed?: string | null; // optional, for future reproducibility
+};
