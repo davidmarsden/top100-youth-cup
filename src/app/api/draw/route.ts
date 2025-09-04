@@ -52,12 +52,13 @@ const supabase = createClient(SUPABASE_URL, SERVICE_ROLE, {
 });
 
 function pick3(arr: string[], seed?: string) {
-  // Fisher–Yates shuffle (optionally seeded for reproducible draws)
   const a = arr.slice();
   let rand = Math.random;
   if (seed) {
-    // simple LCG for deterministic shuffle when a seed is supplied
-    let s = Array.from(seed).reduce((n, c) => (n * 33 + c.charCodeAt(0)) >>> 0, 2166136261 >>> 0);
+    let s = Array.from(seed).reduce(
+      (n, c) => (n * 33 + c.charCodeAt(0)) >>> 0,
+      2166136261 >>> 0
+    );
     rand = () => {
       s = (1664525 * s + 1013904223) >>> 0;
       return (s & 0xfffffff) / 0xfffffff;
@@ -90,7 +91,7 @@ function extractAdminKey(req: Request, body: any): string | null {
 /** GET → return latest winners (public) */
 export async function GET() {
   const { data, error } = await supabase
-    .from<DrawRow>("prize_draws")
+    .from("prize_draws") // ⟵ no generic here
     .select("id, seed, winners, full_order, created_at")
     .order("created_at", { ascending: false })
     .limit(1);
@@ -99,7 +100,7 @@ export async function GET() {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  const latest = data?.[0];
+  const latest = (data as DrawRow[] | null)?.[0];
   return NextResponse.json({
     winners: latest?.winners ?? [],
     created_at: latest?.created_at ?? null,
@@ -114,7 +115,7 @@ export async function POST(req: Request) {
       body = await req.json();
     }
   } catch {
-    // ignore parse errors; body is optional
+    // body optional
   }
 
   const provided = extractAdminKey(req, body);
@@ -130,13 +131,11 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Invalid API key" }, { status: 401 });
   }
 
-  // Optional: allow deterministic seed from body
   const seed = typeof body?.seed === "string" ? body.seed : undefined;
   const { winners, fullOrder } = pick3(ELIGIBLE, seed);
 
-  // Persist draw
   const { data, error } = await supabase
-    .from("prize_draws")
+    .from("prize_draws") // ⟵ no generic here
     .insert([{ seed: seed ?? null, winners, full_order: fullOrder }])
     .select("id, winners, created_at")
     .single();
@@ -145,5 +144,9 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  return NextResponse.json({ winners: data?.winners ?? winners, created_at: data?.created_at });
+  const row = data as DrawRow | null;
+  return NextResponse.json({
+    winners: row?.winners ?? winners,
+    created_at: row?.created_at ?? null,
+  });
 }
