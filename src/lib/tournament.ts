@@ -1,57 +1,49 @@
 // src/lib/tournament.ts
-import type { Entrant, Fixture, Standing, GroupTeam } from "./types";
+import type { Entrant, GroupTeam, Fixture, Standing } from "@/lib/types";
 
-/**
- * Randomly assign entrants into groups.
- */
+/** Assign entrants to groups A.. based on index (simple round-robin bucket). */
 export function assignGroups(
   entrants: Entrant[],
   opts: { groupCount: number }
 ): GroupTeam[] {
-  const { groupCount } = opts;
-
-  const shuffled = [...entrants].sort(() => Math.random() - 0.5);
   const groups: GroupTeam[] = [];
+  const letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
+  const count = Math.max(1, Math.min(opts.groupCount || 1, letters.length));
 
-  shuffled.forEach((entrant, i) => {
-    const groupIndex = i % groupCount;
+  entrants.forEach((e, idx) => {
+    const g = letters[idx % count];
     groups.push({
-      ...entrant,
-      group: String.fromCharCode(65 + groupIndex), // A, B, C...
+      group: g,
+      entrantId: e.id,
+      manager: e.manager,
+      club: e.club ?? null,
     });
   });
 
   return groups;
 }
 
-/**
- * Generate round-robin fixtures for each group.
- */
-export function generateFixtures(groups: GroupTeam[]): Fixture[] {
+/** Generate simple single round-robin fixtures inside each group. */
+export function generateFixtures(grouped: GroupTeam[]): Fixture[] {
+  const byGroup = grouped.reduce<Record<string, GroupTeam[]>>((acc, gt) => {
+    (acc[gt.group] ||= []).push(gt);
+    return acc;
+  }, {});
+
   const fixtures: Fixture[] = [];
-  const grouped: Record<string, GroupTeam[]> = {};
-
-  groups.forEach((g) => {
-    if (!grouped[g.group]) grouped[g.group] = [];
-    grouped[g.group].push(g);
-  });
-
-  let fixtureId = 1;
-
-  Object.entries(grouped).forEach(([group, teams]) => {
+  Object.entries(byGroup).forEach(([group, teams]) => {
     for (let i = 0; i < teams.length; i++) {
       for (let j = i + 1; j < teams.length; j++) {
+        const a = teams[i];
+        const b = teams[j];
         fixtures.push({
-          id: `fx-${fixtureId++}`,
-          season: "current", // you can swap in useSeason() at runtime
-          stage: "group",
-          round: null,
-          roundLabel: null,
-          stageLabel: `Group ${group}`,
+          id: `${group}-${a.entrantId}-${b.entrantId}`,
           group,
-          kickoff: null,
-          homeId: teams[i].id,
-          awayId: teams[j].id,
+          homeId: a.entrantId,
+          awayId: b.entrantId,
+          roundLabel: "Group",
+          stageLabel: "Group Stage",
+          scheduledAt: null,
           homeGoals: null,
           awayGoals: null,
         });
@@ -62,59 +54,83 @@ export function generateFixtures(groups: GroupTeam[]): Fixture[] {
   return fixtures;
 }
 
-/**
- * Calculate standings from fixtures.
- */
+/** Calculate standings from fixtures (3 win, 1 draw, 0 loss). */
 export function calculateStandings(
-  groups: GroupTeam[],
-  fixtures: Fixture[]
+  fixtures: Fixture[],
+  entrants: Entrant[],
+  grouped: GroupTeam[]
 ): Standing[] {
-  const standings: Standing[] = groups.map((g) => ({
-    id: g.id,
-    season: g.season,
-    group: g.group ?? "",
-    teamId: g.id,
-    played: 0,
-    won: 0,
-    drawn: 0,
-    lost: 0,
-    goalsFor: 0,
-    goalsAgainst: 0,
-    points: 0,
-  }));
+  const nameMap = new Map<string, string>();
+  entrants.forEach((e) => {
+    const name = e.club ? `${e.manager} (${e.club})` : e.manager;
+    nameMap.set(e.id, name);
+  });
+  const groupMap = new Map<string, string | null>();
+  grouped.forEach((g) => groupMap.set(g.entrantId, g.group));
 
-  const map = Object.fromEntries(standings.map((s) => [s.teamId, s]));
+  const table = new Map<string, Standing>();
+
+  function ensureRow(teamId: string) {
+    if (!table.has(teamId)) {
+      table.set(teamId, {
+        teamId,
+        teamName: nameMap.get(teamId) ?? teamId,
+        group: groupMap.get(teamId) ?? null,
+        played: 0,
+        won: 0,
+        drawn: 0,
+        lost: 0,
+        goalsFor: 0,
+        goalsAgainst: 0,
+        points: 0,
+      });
+    }
+    return table.get(teamId)!;
+  }
 
   fixtures.forEach((fx) => {
-    if (fx.homeGoals == null || fx.awayGoals == null) return;
+    const { homeId, awayId, homeGoals, awayGoals } = fx;
+    if (homeGoals == null || awayGoals == null) return;
 
-    const home = map[fx.homeId];
-    const away = map[fx.awayId];
+    const h = ensureRow(homeId);
+    const a = ensureRow(awayId);
 
-    if (!home || !away) return;
+    h.played += 1;
+    a.played += 1;
+    h.goalsFor += homeGoals;
+    h.goalsAgainst += awayGoals;
+    a.goalsFor += awayGoals;
+    a.goalsAgainst += homeGoals;
 
-    home.played++;
-    away.played++;
-    home.goalsFor += fx.homeGoals;
-    home.goalsAgainst += fx.awayGoals;
-    away.goalsFor += fx.awayGoals;
-    away.goalsAgainst += fx.homeGoals;
-
-    if (fx.homeGoals > fx.awayGoals) {
-      home.won++;
-      away.lost++;
-      home.points += 3;
-    } else if (fx.homeGoals < fx.awayGoals) {
-      away.won++;
-      home.lost++;
-      away.points += 3;
+    if (homeGoals > awayGoals) {
+      h.won += 1;
+      a.lost += 1;
+      h.points += 3;
+    } else if (homeGoals < awayGoals) {
+      a.won += 1;
+      h.lost += 1;
+      a.points += 3;
     } else {
-      home.drawn++;
-      away.drawn++;
-      home.points++;
-      away.points++;
+      h.drawn += 1;
+      a.drawn += 1;
+      h.points += 1;
+      a.points += 1;
     }
   });
 
-  return standings.sort((a, b) => b.points - a.points);
+  const rows = Array.from(table.values());
+  rows.sort((x, y) => {
+    // group, points desc, GD desc, goalsFor desc, name asc
+    const gx = x.group ?? "";
+    const gy = y.group ?? "";
+    if (gx !== gy) return gx.localeCompare(gy);
+    if (y.points !== x.points) return y.points - x.points;
+    const gdX = x.goalsFor - x.goalsAgainst;
+    const gdY = y.goalsFor - y.goalsAgainst;
+    if (gdY !== gdX) return gdY - gdX;
+    if (y.goalsFor !== x.goalsFor) return y.goalsFor - x.goalsFor;
+    return x.teamName.localeCompare(y.teamName);
+  });
+
+  return rows;
 }
