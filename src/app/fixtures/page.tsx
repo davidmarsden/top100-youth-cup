@@ -72,10 +72,10 @@ export default function FixturesPage() {
     }
     for (const k of Object.keys(map)) {
       map[k].sort(
-        (a, b) =>
-          (a.scheduled_at || '').localeCompare(b.scheduled_at || '') ||
-          a.id.localeCompare(b.id)
-      );
+  (a, b) =>
+    (a.kickoff ?? '').localeCompare(b.kickoff ?? '') ||
+    a.id.localeCompare(b.id)
+);
     }
     return map;
   }, [fixtures]);
