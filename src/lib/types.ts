@@ -2,8 +2,10 @@
 
 export type Entrant = {
   id: string;
+  season: string;            // ✅ added to match /api/entrants/route.ts
   manager: string;
-  club: string;
+  club: string | null;
+  seed?: string | null;      // optional, present in some sources
 };
 
 export type GroupTeam = {
@@ -17,7 +19,7 @@ export type Fixture = {
   round_label: string | null;
   stage_label: string | null;
   group: string | null;
-  kickoff: string | null;        // renamed from scheduled_at
+  kickoff: string | null;    // renamed from scheduled_at
   homeId: string | null;
   awayId: string | null;
   homeGoals: number | null;
@@ -34,7 +36,7 @@ export type Standing = {
   goalsAgainst: number;
   goalDifference: number;
   points: number;
-  group?: string;                // ✅ added so standings can be grouped
+  group?: string;            // optional grouping key for tables
 };
 
 export type Settings = {
