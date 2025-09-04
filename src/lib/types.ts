@@ -92,3 +92,11 @@ export interface KO {
 
 // --- Utility map type ---
 export type NamedMap<T> = { [key: string]: T };
+export type Entrant = {
+  id: string;
+  season: string;
+  manager: string;
+  // NEW:
+  club?: string | null; // display name used in fixtures page
+  // ...any other fields you already have (seed, group, etc.)
+};
