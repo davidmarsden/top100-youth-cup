@@ -1,55 +1,58 @@
+// src/components/Entrants.tsx
 'use client';
-import React, { useMemo, useState } from 'react';
-import { Entrant } from '@/lib/types';
 
-type SortKey = 'manager' | 'club' | 'rating';
-export default function EntrantsTable({ entrants, onClear }: { entrants: Entrant[]; onClear?: ()=>void }) {
-  const [sort, setSort] = useState<SortKey>('manager');
-  const [dir, setDir] = useState<1|-1>(1);
+import React from 'react';
+import type { Entrant } from '@/lib/types';
 
-  const sorted = useMemo(() => {
+// Only allow sorting by keys that actually exist on Entrant.
+// If some of these don't exist on your Entrant type, Extract<> will remove them.
+export type SortKey = Extract<keyof Entrant, 'manager' | 'club' | 'seed' | 'rating'>;
+
+type Props = {
+  entrants: Entrant[];
+  sort: SortKey;
+  dir?: 'asc' | 'desc';
+};
+
+export default function Entrants({ entrants, sort, dir = 'asc' }: Props) {
+  const direction = dir === 'asc' ? 1 : -1;
+
+  const sorted = React.useMemo(() => {
     const a = entrants.slice();
-    a.sort((x,y) => {
-      const xv = (x[sort] ?? '') as any;
-      const yv = (y[sort] ?? '') as any;
-      if (sort==='rating') return (Number(xv||0) - Number(yv||0)) * dir;
-      return String(xv).localeCompare(String(yv)) * dir;
-    });
-    return a;
-  }, [entrants, sort, dir]);
 
-  const setSortKey = (k: SortKey) => {
-    if (k===sort) setDir(dir===1?-1:1); else { setSort(k); setDir(1); }
-  };
+    a.sort((x, y) => {
+      // TS now knows `sort` is a key of Entrant
+      const xv = x[sort] as unknown as string | number | null | undefined;
+      const yv = y[sort] as unknown as string | number | null | undefined;
+
+      // Special-case numeric sort for rating (if present)
+      if (sort === ('rating' as SortKey)) {
+        const xn = Number(xv ?? 0);
+        const yn = Number(yv ?? 0);
+        if (xn === yn) return 0;
+        return xn < yn ? -1 * direction : 1 * direction;
+      }
+
+      const xs = String(xv ?? '');
+      const ys = String(yv ?? '');
+      const cmp = xs.localeCompare(ys, undefined, { sensitivity: 'base' });
+      return cmp * direction;
+    });
+
+    return a;
+  }, [entrants, sort, dir, direction]);
 
   return (
-    <>
-      <div className="flex items-center gap-2 mb-2">
-        <span className="text-sm opacity-80">Sort:</span>
-        <button className={`btn ${sort==='manager'?'bg-white text-black':''}`} onClick={()=>setSortKey('manager')}>Manager</button>
-        <button className={`btn ${sort==='club'?'bg-white text-black':''}`} onClick={()=>setSortKey('club')}>Club</button>
-        <button className={`btn ${sort==='rating'?'bg-white text-black':''}`} onClick={()=>setSortKey('rating')}>Rating</button>
-        <span className="text-xs opacity-70 ml-2">{dir===1?'↑ asc':'↓ desc'}</span>
-        {onClear && <button className="btn border-red-400 hover:bg-red-400/20 ml-auto" onClick={onClear}>Clear entrants</button>}
-      </div>
-      <div className="max-h-[420px] overflow-auto">
-        <table className="table">
-          <thead><tr className="text-left opacity-80">
-            <th className="py-1">Manager</th>
-            <th className="py-1">Club</th>
-            <th className="py-1 text-right">Rating</th>
-          </tr></thead>
-          <tbody>
-            {sorted.map(e=> (
-              <tr key={e.id} className="border-t border-white/10">
-                <td className="py-1 pr-2">{e.manager}</td>
-                <td className="py-1 pr-2">{e.club}</td>
-                <td className="py-1 text-right">{e.rating ?? '–'}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </>
+    <ul className="list-disc ml-6">
+      {sorted.map((e) => (
+        <li key={e.id}>
+          {e.manager}
+          {e.club ? ` (${e.club})` : ''}
+          {e.seed ? ` — seed ${e.seed}` : ''}
+          {/* Render rating if you have it */}
+          {'rating' in e && (e as any).rating != null ? ` — rating ${(e as any).rating}` : ''}
+        </li>
+      ))}
+    </ul>
   );
 }
