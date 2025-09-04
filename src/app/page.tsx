@@ -21,7 +21,7 @@ export default function Page() {
   // Load saved data
   useEffect(() => {
     (async () => {
-      const savedEntrants = await load<Entrant[]>(season, 'entrants');
+      const savedEntrants = await load<Entrant[]>('entrants', []);
       const es = savedEntrants ?? [];
       setEntrants(es);
 
