@@ -1,98 +1,72 @@
-// src/app/api/draw/import/route.ts
+// src/app/api/draw/route.ts
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
 export const dynamic = "force-dynamic";
 
-export type RawRow = {
+type Row = {
   id: string;
   created_at: string | null;
   seed: string | null;
-  winners: unknown | null;   // jsonb (array of 3 names)
-  full_order: string | null; // optional long list as text
-  ticket_url: string | null; // official ticket URL
+  winners: unknown | null;   // jsonb (array of names)
+  full_order: string | null; // long text list (optional)
+  ticket_url: string | null; // official ticket URL (optional)
 };
 
-type ImportPayload = {
-  adminKey?: string;
-  winners: string[];
-  fullOrder?: string;
-  seed?: string;
-  ticketUrl?: string;
-};
-
-function getSupabaseAdmin() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-  if (!url || !key) {
-    throw new Error("Supabase env not set (URL or SERVICE_ROLE_KEY missing).");
+function getSupabaseForServerReads() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
+  const service = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+  if (!url || !service) {
+    const problems = {
+      hasUrl: Boolean(url),
+      hasServiceRole: Boolean(service),
+      // NOTE: we never expose actual values; just booleans.
+    };
+    throw new Error(
+      `Supabase env missing. Expected NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY. ${JSON.stringify(
+        problems
+      )}`
+    );
   }
-  return createClient(url, key, { auth: { persistSession: false } });
+  // Use the service role on the server so we can read even if RLS blocks anon.
+  return createClient(url, service, { auth: { persistSession: false } });
 }
 
 function ok<T>(data: T, status = 200) {
   return NextResponse.json({ ok: true, data }, { status });
 }
-function fail(message: string, status = 400) {
-  return NextResponse.json({ ok: false, error: message }, { status });
-}
-
-export async function POST(req: Request) {
-  try {
-    const body = (await req.json()) as ImportPayload;
-
-    const headerKey = req.headers.get("x-admin-key") ?? undefined;
-    const providedKey = body.adminKey ?? headerKey ?? "";
-    const adminKey = process.env.ADMIN_KEY ?? "";
-
-    if (!adminKey) return fail("Server missing ADMIN_KEY env var.", 500);
-    if (providedKey !== adminKey) return fail("Invalid admin key.", 401);
-
-    if (!Array.isArray(body.winners) || body.winners.length === 0) {
-      return fail("Payload must include 'winners' (array).");
-    }
-
-    const insertPayload = {
-      seed: body.seed ?? null,
-      winners: body.winners,          // jsonb
-      full_order: body.fullOrder ?? null,
-      ticket_url: body.ticketUrl ?? null,
-    };
-
-    const supabase = getSupabaseAdmin();
-
-    // IMPORTANT: no generics on .from — avoids the “expected 2 type arguments” error
-    const { data, error } = await supabase
-      .from("prize_draws")
-      .insert(insertPayload)
-      .select("id, created_at, seed, winners, full_order, ticket_url")
-      .single();
-
-    if (error) return fail(`Insert failed: ${error.message}`, 500);
-
-    const row = data as RawRow;
-    return ok(row);
-  } catch (err: any) {
-    return fail(err?.message ?? "Unexpected error.", 500);
-  }
+function fail(message: string, status = 500, extra?: Record<string, unknown>) {
+  return NextResponse.json({ ok: false, error: message, ...extra }, { status });
 }
 
 export async function GET() {
   try {
-    const supabase = getSupabaseAdmin();
+    const supabase = getSupabaseForServerReads();
 
+    // No generics on .from — avoids TS “expected 2 type arguments” issues.
     const { data, error } = await supabase
       .from("prize_draws")
       .select("id, created_at, seed, winners, full_order, ticket_url")
       .order("created_at", { ascending: false })
       .limit(1);
 
-    if (error) return fail(`Fetch failed: ${error.message}`, 500);
-    if (!data || data.length === 0) return ok(null);
+    if (error) {
+      // Typical failure here (when using anon) is RLS/permission denied.
+      // With service role it should not happen, but we surface details if it does.
+      return fail(`Supabase select failed: ${error.message}`, 500, {
+        code: (error as any)?.code ?? null,
+        hint: (error as any)?.hint ?? null,
+      });
+    }
 
-    const row = data[0] as RawRow;
-    return ok(row);
+    if (!data || data.length === 0) {
+      // Clean “no content yet” response (still 200)
+      return ok<Row | null>(null);
+    }
+
+    const latest = data[0] as Row;
+    return ok<Row>(latest);
   } catch (err: any) {
-    return fail(err?.message ?? "Unexpected error.", 500);
+    return fail(err?.message ?? "Unexpected server error.", 500);
   }
 }
