@@ -1,100 +1,89 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+
+// Types
 import { Fixture, Entrant } from '@/lib/types';
 
 export default function FixturesPage() {
   const [fixtures, setFixtures] = useState<Fixture[]>([]);
   const [entrants, setEntrants] = useState<Entrant[]>([]);
-  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    async function loadData() {
+    const loadData = async () => {
       try {
         const [fxRes, enRes] = await Promise.all([
           fetch('/api/fixtures'),
           fetch('/api/entrants'),
         ]);
-        const [fxJson, enJson] = await Promise.all([
-          fxRes.json(),
-          enRes.json(),
-        ]);
-        setFixtures(fxJson);
-        setEntrants(enJson);
+
+        if (!fxRes.ok) throw new Error('Failed to load fixtures');
+        if (!enRes.ok) throw new Error('Failed to load entrants');
+
+        const fxData: Fixture[] = await fxRes.json();
+        const enData: Entrant[] = await enRes.json();
+
+        setFixtures(fxData);
+        setEntrants(enData);
       } catch (err) {
-        console.error('Failed to load fixtures or entrants', err);
-      } finally {
-        setLoading(false);
+        console.error(err);
       }
-    }
+    };
+
     loadData();
   }, []);
 
-  if (loading) {
-    return <p className="p-4">Loading fixtures…</p>;
-  }
+  // Helper: map entrant id → club name
+  const clubOf = (id: string | null | undefined) =>
+    id ? entrants.find((e) => e.id === id)?.club ?? id : 'TBC';
 
-  // Map fixtures into groups
-  const map: Record<string, Fixture[]> = {};
-  for (const fx of fixtures) {
-    const key =
-      fx.stage === 'groups'
-        ? 'Groups'
-        : fx.stage
-        ? fx.stage.replace('_', ' ')
-        : 'Other';
+  // Group fixtures by stage
+  const byStage: Record<string, Fixture[]> = {};
+  fixtures.forEach((f) => {
+    const key = f.stage ?? 'Uncategorised';
+    if (!byStage[key]) byStage[key] = [];
+    byStage[key].push(f);
+  });
 
-    if (!map[key]) map[key] = [];
-    map[key].push(fx);
-  }
-
-  // Sort fixtures within each group
-  Object.keys(map).forEach((k) => {
-    map[k].sort(
+  // Sort each stage's fixtures by kickoff then id
+  Object.keys(byStage).forEach((k) => {
+    byStage[k].sort(
       (a, b) =>
-        (a.scheduledAt ?? '').localeCompare(b.scheduledAt ?? '') ||
-        a.id.localeCompare(b.id)
+        (a.kickoff ?? '').localeCompare(b.kickoff ?? '') ||
+        a.id.localeCompare(b.id),
     );
   });
 
-  const clubOf = (id: string | null | undefined) =>
-    id
-      ? entrants.find((e) => e.id === id)?.club ?? '(unknown club)'
-      : '';
-
   return (
-    <div className="p-4">
-      <h1 className="text-2xl font-bold mb-4">Fixtures</h1>
-
-      {Object.keys(map).map((stage) => (
-        <div key={stage} className="mb-8">
-          <h2 className="text-xl font-semibold mb-2">{stage}</h2>
-          <table className="w-full border-collapse">
-            <thead>
-              <tr className="border-b">
-                <th className="py-1 pr-2 text-left">Date</th>
-                <th className="py-1 pr-2 text-left">Home</th>
-                <th className="py-1 pr-2 text-center">Score</th>
-                <th className="py-1 pr-2 text-left">Away</th>
-              </tr>
-            </thead>
-            <tbody>
-              {map[stage].map((fx) => (
-                <tr key={fx.id} className="border-b">
-                  <td className="py-1 pr-2">{fx.scheduledAt ?? 'TBD'}</td>
-                  <td className="py-1 pr-2">{clubOf(fx.homeId)}</td>
-                  <td className="py-1 pr-2 text-center">
-                    {fx.homeGoals != null && fx.awayGoals != null
-                      ? `${fx.homeGoals} – ${fx.awayGoals}`
-                      : 'vs'}
-                  </td>
-                  <td className="py-1 pr-2">{clubOf(fx.awayId)}</td>
-                </tr>
+    <div className="p-6">
+      <h1 className="text-3xl font-bold mb-6">Fixtures</h1>
+      <div className="space-y-8">
+        {Object.entries(byStage).map(([stage, fx]) => (
+          <div key={stage}>
+            <h2 className="text-xl font-semibold mb-3">{stage}</h2>
+            <div className="grid lg:grid-cols-3 gap-4">
+              {fx.map((f) => (
+                <div
+                  key={f.id}
+                  className="border rounded p-3 bg-white shadow-sm"
+                >
+                  <div className="text-sm text-gray-600 mb-1">
+                    {f.kickoff ?? 'TBC'}
+                  </div>
+                  <div className="font-medium">
+                    {clubOf(f.homeId)} vs {clubOf(f.awayId)}
+                  </div>
+                  {f.homeGoals != null && f.awayGoals != null && (
+                    <div className="text-lg font-bold">
+                      {f.homeGoals} - {f.awayGoals}
+                    </div>
+                  )}
+                </div>
               ))}
-            </tbody>
-          </table>
-        </div>
-      ))}
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
