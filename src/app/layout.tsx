@@ -4,42 +4,37 @@ const inter = Inter({ subsets: ["latin"], variable: "--font-body" });
 
 
 
-import type { Metadata } from "next";
+// src/app/layout.tsx
 import "./globals.css";
-import SiteHeader from "@/components/SiteHeader";
-import SiteFooter from "@/components/SiteFooter";
+import type { Metadata } from "next";
+import Link from "next/link";
 
 export const metadata: Metadata = {
-  title: "Top 100 Youth Cup",
-  description: "Season 26 · Fixtures, standings and prize draw",
-  icons: {
-    icon: "/favicon.ico",        // optional if you have it
-    shortcut: "/icon-192.png",   // optional
-    apple: "/icon-192.png",      // optional
-  },
-  openGraph: {
-    title: "Top 100 Youth Cup – Season 26",
-    description: "Live fixtures, standings & official three-winner prize draw.",
-    url: "https://<your-domain>",        // set your domain
-    siteName: "Top 100 Youth Cup",
-    images: [{ url: "/icon-512.png", width: 512, height: 512, alt: "Top 100 Youth Cup" }],
-    type: "website",
-  },
-  twitter: {
-    card: "summary_large_image",
-    title: "Top 100 Youth Cup – Season 26",
-    description: "Live fixtures, standings & prize draw.",
-    images: ["/icon-512.png"],
-  },
+  title: "Top 100 Youth Cup — Prize Draw",
+  description: "Official Season 26 prize draw — three winners, publicly viewable.",
+  icons: { icon: "/favicon.ico" },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      <body className="min-h-screen text-white bg-pitch">
-        <SiteHeader />
-        <main className="mx-auto max-w-6xl px-4 sm:px-6 py-10">{children}</main>
-        <SiteFooter />
+      <body className="bg-[#0a0f1a] text-white">
+        <header className="sticky top-0 z-40 border-b border-white/10 bg-[#0a0f1a]/80 backdrop-blur">
+          <div className="mx-auto max-w-6xl px-4 h-16 flex items-center gap-4">
+            <Link href="/" className="flex items-center gap-3">
+              <div className="h-9 w-9 rounded-full bg-gradient-to-br from-blue-500 to-indigo-700 grid place-items-center shadow">
+                <span className="text-white text-sm font-bold">★</span>
+              </div>
+              <div className="leading-tight">
+                <div className="font-semibold">Top 100 Youth Cup</div>
+                <div className="text-xs text-gray-400">Season 26</div>
+              </div>
+            </Link>
+            {/* No right-side nav buttons anymore */}
+            <div className="ml-auto" />
+          </div>
+        </header>
+        <main className="mx-auto max-w-6xl px-4 py-10">{children}</main>
       </body>
     </html>
   );
