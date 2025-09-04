@@ -32,7 +32,7 @@ export default function HomePage() {
 
   useEffect(() => {
     (async () => {
-      // ✅ load requires 2 args: (key, fallback)
+      // load requires 2 args: (key, fallback)
       const savedEntrants = await load<Entrant[]>("entrants", []);
       const es = savedEntrants ?? [];
       setEntrants(es);
@@ -94,7 +94,7 @@ export default function HomePage() {
         ) : (
           <ul className="list-disc ml-6">
             {groups.map((g) => (
-              <li key={g.id}>
+              <li key={`${g.group}-${g.teamId}`}>
                 {g.group} – {g.manager} {g.club ? `(${g.club})` : ""}
               </li>
             ))}
