@@ -1,106 +1,55 @@
 // src/lib/types.ts
 
-/** Common ID alias for clarity */
-export type Id = string;
-
-/* -------------------------------- Entrants ------------------------------- */
+// ──────────────────────────────────────────────────────────────────────────────
+// Core domain types used across the app
+// ──────────────────────────────────────────────────────────────────────────────
 
 export interface Entrant {
-  id: Id;
-  /** Season slug/key this entrant belongs to (e.g. "s26") */
+  id: string;
   season: string;
-  /** Manager/coach name */
   manager: string;
-  /** Optional club name shown in the UI */
-  club: string | null;
-  /** Optional seeding info, e.g. "1", "A", etc. */
-  seed: string | null;
+  club?: string | null;
+  seed?: string | null;
 }
 
-/* -------------------------------- Settings ------------------------------- */
-
-export interface Settings {
-  /**
-   * Number of groups in the group stage (used by assignGroups, page.tsx, etc.)
-   */
-  groupCount: number;
-
-  /**
-   * Optional helpers you may add later; kept optional so builds don’t fail.
-   */
-  teamsPerGroup?: number;
-  roundsPerGroup?: number;
+export interface Fixture {
+  id: string;
+  season: string;
+  stage: string | null;
+  round: string | null;
+  roundLabel: string | null;   // ← camelCase (maps from DB round_label)
+  stageLabel: string | null;   // ← camelCase (maps from DB stage_label)
+  group: string | null;
+  scheduledAt: string | null;  // ← camelCase (maps from DB scheduled_at)
+  homeId: string | null;       // ← camelCase (maps from DB home_id)
+  awayId: string | null;       // ← camelCase (maps from DB away_id)
+  homeGoals: number | null;    // ← camelCase (maps from DB home_goals)
+  awayGoals: number | null;    // ← camelCase (maps from DB away_goals)
 }
 
-/* ----------------------------- Group & Tables ---------------------------- */
+export interface GroupTeam {
+  group: string;        // e.g. "A", "B", ...
+  entrantId: string;    // Entrant.id assigned to the group
+}
 
 export interface Standing {
-  /** Group label like "A", "B", etc. */
-  group: string;
-
-  /** Entrant id this row refers to */
-  entrantId: Id;
-
-  // Basic table stats
+  entrantId: string;    // links a row to an Entrant
+  group: string;        // group this entrant belongs to
   played: number;
   won: number;
   drawn: number;
   lost: number;
-
   goalsFor: number;
   goalsAgainst: number;
-
-  /** Convenience derived value; can be provided or computed in UI */
-  goalDiff?: number;
-
+  goalDiff: number;
   points: number;
-
-  /** Optional display order if pre-ranked */
-  rank?: number;
 }
 
-/* -------------------------------- Fixtures ------------------------------- */
-
-export interface Fixture {
-  id: Id;
-  season: string;
-
-  /** Competition stage slug, e.g. "groups", "youth_cup", "youth_shield" */
-  stage: string | null;
-
-  /** Numeric or string round identifier; keep string for flexibility */
-  round: string | null;
-
-  /** Optional human labels if provided by data source */
-  roundLabel: string | null;
-  stageLabel: string | null;
-
-  /** Group label for group-stage matches (e.g., "A") */
-  group: string | null;
-
-  /**
-   * ISO datetime of kickoff; mapped from source `scheduled_at`.
-   * Kept as string for easy rendering/sorting without TZ coercion.
-   */
-  scheduledAt: string | null;
-
-  /** Team/entrant ids as strings (API mapper coerces nulls to '') */
-  homeId: Id;
-  awayId: Id;
-
-  /** Scores if played; null if not yet played */
-  homeGoals: number | null;
-  awayGoals: number | null;
+export interface Settings {
+  groupCount: number;     // how many groups
+  teamsPerGroup: number;  // teams in each group
+  legsPerFixture: number; // 1 or 2 legs
+  pointsForWin: number;   // usually 3
+  pointsForDraw: number;  // usually 1
+  pointsForLoss: number;  // usually 0
 }
-
-/* ----------------------------- Helper Mappings --------------------------- */
-
-/**
- * Minimal shape used by assignGroups helpers if you need it in code.
- * (Kept optional export; safe to remove if unused.)
- */
-export interface GroupTeam {
-  group: string;
-  entrantId: Id;
-}
-```0
