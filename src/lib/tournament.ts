@@ -1,136 +1,104 @@
-// src/lib/tournament.ts
-import type { Entrant, GroupTeam, Fixture, Standing } from "@/lib/types";
+import type { Entrant, Fixture, GroupKey, GroupsByKey, Standing } from "@/lib/types";
 
-/** Assign entrants to groups A.. based on index (simple round-robin bucket). */
+/** Split entrants into A.. groups (round-robin) */
 export function assignGroups(
   entrants: Entrant[],
-  opts: { groupCount: number }
-): GroupTeam[] {
-  const groups: GroupTeam[] = [];
-  const letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
-  const count = Math.max(1, Math.min(opts.groupCount || 1, letters.length));
+  { groupCount }: { groupCount: number }
+): GroupsByKey {
+  const keys: GroupKey[] = Array.from({ length: groupCount }, (_, i) =>
+    String.fromCharCode("A".charCodeAt(0) + i)
+  );
+  const groups: GroupsByKey = Object.fromEntries(keys.map(k => [k, []]));
 
-  entrants.forEach((e, idx) => {
-    const g = letters[idx % count];
-    groups.push({
-      group: g,
-      entrantId: e.id,
-      manager: e.manager,
-      club: e.club ?? null,
-    });
+  const sorted = entrants.slice().sort((a, b) =>
+    (a.manager ?? "").localeCompare(b.manager ?? "")
+  );
+
+  sorted.forEach((e, idx) => {
+    const k = keys[idx % keys.length];
+    groups[k].push(e);
   });
 
   return groups;
 }
 
-/** Generate simple single round-robin fixtures inside each group. */
-export function generateFixtures(grouped: GroupTeam[]): Fixture[] {
-  const byGroup = grouped.reduce<Record<string, GroupTeam[]>>((acc, gt) => {
-    (acc[gt.group] ||= []).push(gt);
-    return acc;
-  }, {});
-
+/** One-leg round robin inside each group; deterministic ids */
+export function generateFixtures(groups: GroupsByKey): Fixture[] {
   const fixtures: Fixture[] = [];
-  Object.entries(byGroup).forEach(([group, teams]) => {
-    for (let i = 0; i < teams.length; i++) {
-      for (let j = i + 1; j < teams.length; j++) {
-        const a = teams[i];
-        const b = teams[j];
+  Object.entries(groups).forEach(([groupKey, entrants]) => {
+    for (let i = 0; i < entrants.length; i++) {
+      for (let j = i + 1; j < entrants.length; j++) {
+        const home = entrants[i];
+        const away = entrants[j];
         fixtures.push({
-          id: `${group}-${a.entrantId}-${b.entrantId}`,
-          group,
-          homeId: a.entrantId,
-          awayId: b.entrantId,
-          roundLabel: "Group",
-          stageLabel: "Group Stage",
+          id: `${groupKey}-${home.id}-${away.id}`,
+          group: groupKey,
+          round: null,
           scheduledAt: null,
+          homeId: home.id,
+          awayId: away.id,
           homeGoals: null,
           awayGoals: null,
         });
       }
     }
   });
-
   return fixtures;
 }
 
-/** Calculate standings from fixtures (3 win, 1 draw, 0 loss). */
+/** Simple table calculator from played fixtures */
 export function calculateStandings(
   fixtures: Fixture[],
   entrants: Entrant[],
-  grouped: GroupTeam[]
+  groups: GroupsByKey
 ): Standing[] {
-  const nameMap = new Map<string, string>();
-  entrants.forEach((e) => {
-    const name = e.club ? `${e.manager} (${e.club})` : e.manager;
-    nameMap.set(e.id, name);
-  });
-  const groupMap = new Map<string, string | null>();
-  grouped.forEach((g) => groupMap.set(g.entrantId, g.group));
+  const byId = new Map(entrants.map(e => [e.id, e]));
+  const rows = new Map<string, Standing>();
 
-  const table = new Map<string, Standing>();
-
-  function ensureRow(teamId: string) {
-    if (!table.has(teamId)) {
-      table.set(teamId, {
+  const ensure = (teamId: string, group: GroupKey | null) => {
+    if (!rows.has(teamId)) {
+      rows.set(teamId, {
         teamId,
-        teamName: nameMap.get(teamId) ?? teamId,
-        group: groupMap.get(teamId) ?? null,
+        group,
         played: 0,
-        won: 0,
-        drawn: 0,
-        lost: 0,
-        goalsFor: 0,
-        goalsAgainst: 0,
+        wins: 0,
+        draws: 0,
+        losses: 0,
+        gf: 0,
+        ga: 0,
+        gd: 0,
         points: 0,
       });
     }
-    return table.get(teamId)!;
-  }
+    return rows.get(teamId)!;
+  };
 
-  fixtures.forEach((fx) => {
-    const { homeId, awayId, homeGoals, awayGoals } = fx;
-    if (homeGoals == null || awayGoals == null) return;
+  fixtures.forEach(f => {
+    const g = f.group ?? null;
+    const h = ensure(f.homeId, g);
+    const a = ensure(f.awayId, g);
 
-    const h = ensureRow(homeId);
-    const a = ensureRow(awayId);
+    if (f.homeGoals == null || f.awayGoals == null) return;
 
-    h.played += 1;
-    a.played += 1;
-    h.goalsFor += homeGoals;
-    h.goalsAgainst += awayGoals;
-    a.goalsFor += awayGoals;
-    a.goalsAgainst += homeGoals;
+    h.played++; a.played++;
+    h.gf += f.homeGoals; h.ga += f.awayGoals;
+    a.gf += f.awayGoals; a.ga += f.homeGoals;
+    h.gd = h.gf - h.ga; a.gd = a.gf - a.ga;
 
-    if (homeGoals > awayGoals) {
-      h.won += 1;
-      a.lost += 1;
-      h.points += 3;
-    } else if (homeGoals < awayGoals) {
-      a.won += 1;
-      h.lost += 1;
-      a.points += 3;
-    } else {
-      h.drawn += 1;
-      a.drawn += 1;
-      h.points += 1;
-      a.points += 1;
-    }
+    if (f.homeGoals > f.awayGoals) { h.wins++; h.points += 3; a.losses++; }
+    else if (f.homeGoals < f.awayGoals) { a.wins++; a.points += 3; h.losses++; }
+    else { h.draws++; a.draws++; h.points++; a.points++; }
   });
 
-  const rows = Array.from(table.values());
-  rows.sort((x, y) => {
-    // group, points desc, GD desc, goalsFor desc, name asc
-    const gx = x.group ?? "";
-    const gy = y.group ?? "";
-    if (gx !== gy) return gx.localeCompare(gy);
-    if (y.points !== x.points) return y.points - x.points;
-    const gdX = x.goalsFor - x.goalsAgainst;
-    const gdY = y.goalsFor - y.goalsAgainst;
-    if (gdY !== gdX) return gdY - gdX;
-    if (y.goalsFor !== x.goalsFor) return y.goalsFor - x.goalsFor;
-    return x.teamName.localeCompare(y.teamName);
-  });
+  // Ensure teams with no matches still appear
+  Object.values(groups).forEach(list =>
+    list.forEach(e => ensure(e.id, null))
+  );
 
-  return rows;
+  return Array.from(rows.values()).sort((x, y) =>
+    (y.points - x.points) ||
+    (y.gd - x.gd) ||
+    (y.gf - x.gf) ||
+    (byId.get(x.teamId)?.manager ?? "").localeCompare(byId.get(y.teamId)?.manager ?? "")
+  );
 }
