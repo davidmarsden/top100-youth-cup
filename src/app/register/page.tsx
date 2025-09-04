@@ -8,26 +8,25 @@ import { load, save } from '@/lib/utils';
 import { useAdmin } from '@/components/AdminGate';
 
 export default function RegisterPage() {
-  const SEASON = useSeason();
+  // ⬇️ useSeason returns a SeasonContextValue (object). We only render its `season` string.
+  const { season } = useSeason();
   const isAdmin = useAdmin();
 
-  // If you’re using Supabase for entrants, prefer fetching from API.
-  // In the client, only NEXT_PUBLIC_* env vars are exposed.
+  // In the browser we can only see NEXT_PUBLIC_* envs; use those to detect Supabase mode.
   const isSupabase = useMemo(
-    () => Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL) && Boolean(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY),
+    () =>
+      Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL) &&
+      Boolean(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY),
     []
   );
 
-  // ✅ Always provide a synchronous default for useState
+  // Local entrants state; initializer must be synchronous (an array), not async.
   const [entrants, setEntrants] = useState<Entrant[]>([]);
 
-  // Load any locally saved entrants (only when not using Supabase)
+  // Load locally stored entrants (only when not using Supabase)
   useEffect(() => {
     if (isSupabase) return;
-
     (async () => {
-      // If your load signature is load<T>(key: string, fallback: T),
-      // this still works because we coalesce to [] below.
       const saved = await load<Entrant[]>('yc:entrants', []);
       setEntrants(saved ?? []);
     })();
@@ -43,7 +42,7 @@ export default function RegisterPage() {
     <main className="max-w-3xl mx-auto p-6 space-y-6">
       <header className="space-y-1">
         <h1 className="text-2xl font-semibold">Register</h1>
-        <p className="text-sm text-gray-500">Season: {SEASON}</p>
+        <p className="text-sm text-gray-500">Season: {season}</p>
       </header>
 
       {!isSupabase && (
@@ -75,7 +74,7 @@ export default function RegisterPage() {
 
       {isAdmin && (
         <p className="text-xs text-gray-400">
-          Admin: you can add controls here to modify entrants and call <code>setEntrants</code>.
+          Admin: add controls here to modify entrants and call <code>setEntrants</code>.
         </p>
       )}
     </main>
