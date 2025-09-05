@@ -2,7 +2,18 @@ import { Bebas_Neue, Inter } from "next/font/google";
 const display = Bebas_Neue({ subsets: ["latin"], weight: "400", variable: "--font-display" });
 const inter = Inter({ subsets: ["latin"], variable: "--font-body" });
 
+import { Toaster } from "react-hot-toast";
 
+export default function RootLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <html lang="en">
+      <body>
+        {children}
+        <Toaster position="top-right" toastOptions={{ duration: 3500 }} />
+      </body>
+    </html>
+  );
+}
 
 // src/app/layout.tsx
 import "./globals.css";
